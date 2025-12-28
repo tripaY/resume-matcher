@@ -18,14 +18,19 @@ Deno.serve(async (req: Request) => {
     // We use the Authorization header from the request to act as the logged-in user
     // This ensures we have a valid user_id for insertion
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-    const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
+    // Get the API key from the request header (injected by the client)
+    const supabaseKey = req.headers.get('apikey') ?? ''
     const authHeader = req.headers.get('Authorization')
 
     if (!authHeader) {
         throw new Error('Missing Authorization header')
     }
 
-    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+    if (!supabaseKey) {
+        throw new Error('Missing apikey header')
+    }
+
+    const supabase = createClient(supabaseUrl, supabaseKey, {
       global: { headers: { Authorization: authHeader } },
     })
 
@@ -43,18 +48,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // 3. Fetch Dictionary Data for Prompt Context
-    // We use Service Role Key here to ensure we can read all meta data even if RLS restricts it (though meta usually public)
-    const adminSupabase = createClient(
-        supabaseUrl, 
-        Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
-    )
-
+    // Using the authenticated client to read dictionary tables
     const [cities, levels, industries, degrees, skills] = await Promise.all([
-      adminSupabase.from('cities').select('id, name'),
-      adminSupabase.from('career_levels').select('id, name'),
-      adminSupabase.from('industries').select('id, name'),
-      adminSupabase.from('degrees').select('id, name'),
-      adminSupabase.from('skills').select('id, name'),
+      supabase.from('cities').select('id, name'),
+      supabase.from('career_levels').select('id, name'),
+      supabase.from('industries').select('id, name'),
+      supabase.from('degrees').select('id, name'),
+      supabase.from('skills').select('id, name'),
     ])
 
     // Create Maps for Name -> ID lookup
@@ -93,8 +93,9 @@ Deno.serve(async (req: Request) => {
             "industry": "string (must be one of Allowed Industries)",
             "salary_min": number (monthly salary),
             "salary_max": number (monthly salary, > min),
-            "description": "string (short job description, 2-3 sentences)",
-            "required_skills": ["array of strings (must be from Allowed Skills)"]
+            "skills": [
+              { "name": "string (must be one of Allowed Skills)", "is_required": boolean }
+            ]
         }
         
         Return ONLY valid JSON array.`
@@ -117,35 +118,45 @@ Deno.serve(async (req: Request) => {
             "expected_title": "string",
             "expected_salary_min": number,
             "expected_salary_max": number,
-            "degree": "string (must be one of Allowed Degrees)",
+            "educations": [
+              {
+                 "school": "string",
+                 "major_industry": "string (must be one of Allowed Industries, acts as major category)",
+                 "degree": "string (must be one of Allowed Degrees)"
+              }
+            ],
+            "experiences": [
+              {
+                 "company_name": "string",
+                 "industry": "string (must be one of Allowed Industries)",
+                 "description": "string (include title, duration, and responsibilities)"
+              }
+            ],
             "skills": ["array of strings (must be from Allowed Skills)"]
         }
         
         Return ONLY valid JSON array.`
     }
 
-    // 5. Call LLM
-    const OPENROUTER_API_KEY = Deno.env.get('OPENROUTER_API_KEY')
-    if (!OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY not set')
-
-    const model = Deno.env.get('LLM_MODEL')
-    if (!model) throw new Error('LLM_MODEL secret not set')
-
-    const llmRes = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    // 5. Call LLM via call-llm function
+    // We reuse the central LLM function to handle model selection and keys
+    const functionsUrl = `${supabaseUrl}/functions/v1/call-llm`
+    
+    const llmRes = await fetch(functionsUrl, {
         method: 'POST',
         headers: {
-            'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
+            'Authorization': authHeader, // Propagate the auth header
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            model: model,
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7
         })
     })
 
     if (!llmRes.ok) {
-        throw new Error('LLM call failed')
+        const errorText = await llmRes.text()
+        throw new Error(`Call-LLM failed: ${llmRes.status} ${errorText}`)
     }
     
     const llmData = await llmRes.json()
@@ -181,23 +192,25 @@ Deno.serve(async (req: Request) => {
                 degree_required_id: degreeMap.get(item.degree_required) || null,
                 industry_id: industryMap.get(item.industry) || null,
                 salary_min: item.salary_min,
-                salary_max: item.salary_max,
-                description: item.description
+                salary_max: item.salary_max
             }
             
             // Insert Job
-            const { data: job, error } = await adminSupabase.from('jobs').insert([jobData]).select().single()
+            const { data: job, error } = await supabase.from('jobs').insert([jobData]).select().single()
             if (error) { console.error('Job insert error:', error); continue; }
             
             // Insert Skills
-            if (item.required_skills && Array.isArray(item.required_skills)) {
-                const skillInserts = item.required_skills
-                    .map((name: string) => skillMap.get(name))
-                    .filter((id: number) => id)
-                    .map((skill_id: number) => ({ job_id: job.id, skill_id, is_required: true }))
+            if (item.skills && Array.isArray(item.skills)) {
+                const skillInserts = item.skills
+                    .map((s: any) => ({
+                        id: skillMap.get(s.name),
+                        is_required: s.is_required
+                    }))
+                    .filter((s: any) => s.id)
+                    .map((s: any) => ({ job_id: job.id, skill_id: s.id, is_required: s.is_required }))
                 
                 if (skillInserts.length > 0) {
-                    await adminSupabase.from('job_skills').insert(skillInserts)
+                    await supabase.from('job_skills').insert(skillInserts)
                 }
             }
             results.push(job)
@@ -215,33 +228,51 @@ Deno.serve(async (req: Request) => {
                 expected_salary_max: item.expected_salary_max
             }
             
-            const { data: resume, error } = await adminSupabase.from('resumes').insert([resumeData]).select().single()
+            const { data: resume, error } = await supabase.from('resumes').insert([resumeData]).select().single()
              if (error) { console.error('Resume insert error:', error); continue; }
 
             // Insert Skills
-             if (item.skills && Array.isArray(item.skills)) {
+            if (item.skills && Array.isArray(item.skills)) {
                 const skillInserts = item.skills
                     .map((name: string) => skillMap.get(name))
                     .filter((id: number) => id)
                     .map((skill_id: number) => ({ resume_id: resume.id, skill_id }))
                  
                  if (skillInserts.length > 0) {
-                     await adminSupabase.from('resume_skills').insert(skillInserts)
+                     await supabase.from('resume_skills').insert(skillInserts)
                  }
             }
             
-            // Mock Education (Degree)
-             if (item.degree) {
-                 const degreeId = degreeMap.get(item.degree)
-                 if (degreeId) {
-                     await adminSupabase.from('educations').insert([{
+            // Insert Educations
+             if (item.educations && Array.isArray(item.educations)) {
+                 const eduInserts = item.educations.map((edu: any) => {
+                     const degreeId = degreeMap.get(edu.degree)
+                     const industryId = industryMap.get(edu.major_industry)
+                     if (!degreeId) return null
+                     return {
                          resume_id: resume.id,
                          degree_id: degreeId,
-                         school: 'Mock University',
-                         major: 'Computer Science',
-                         start_date: '2015-09-01',
-                         end_date: '2019-06-30'
-                     }])
+                         major_industry_id: industryId || null,
+                         school: edu.school
+                     }
+                 }).filter(Boolean)
+
+                 if (eduInserts.length > 0) {
+                     await supabase.from('educations').insert(eduInserts)
+                 }
+             }
+
+            // Insert Experiences
+             if (item.experiences && Array.isArray(item.experiences)) {
+                 const expInserts = item.experiences.map((exp: any) => ({
+                     resume_id: resume.id,
+                     company_name: exp.company_name,
+                     industry_id: industryMap.get(exp.industry) || null,
+                     description: exp.description
+                 }))
+
+                 if (expInserts.length > 0) {
+                     await supabase.from('experiences').insert(expInserts)
                  }
              }
              results.push(resume)

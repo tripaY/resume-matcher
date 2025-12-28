@@ -3,7 +3,7 @@ import type { JobDTO, ResumeDTO, MetaData } from '../types/supabase'
 import type { User } from '@supabase/supabase-js'
 
 // Helper to transform Job DB response to Frontend DTO
-const transformJob = (job: any): JobDTO => {
+export const transformJob = (job: any): JobDTO => {
   return {
     id: job.id,
     title: job.title,
@@ -22,7 +22,7 @@ const transformJob = (job: any): JobDTO => {
 }
 
 // Helper to transform Resume DB response to Frontend DTO
-const transformResume = (resume: any): ResumeDTO => {
+export const transformResume = (resume: any): ResumeDTO => {
   return {
     id: resume.id,
     name: resume.candidate_name,
@@ -45,7 +45,10 @@ const transformResume = (resume: any): ResumeDTO => {
 export const supabaseService = {
   // --- AUTH ---
   async loginOrRegister(username: string, password: string): Promise<{ user: User | null, error: any }> {
-    const email = username.includes('@') ? username : `${username}@resumematcher.com`
+    // Force username flow: append dummy domain to satisfy Supabase Auth requirements
+    // We trim whitespace and convert to lowercase to ensure uniqueness consistency
+    const cleanUsername = username.trim()
+    const email = `${cleanUsername}@resumematcher.local` 
     
     // 1. Try Login
     const { data: loginData, error: loginError } = await supabase.auth.signInWithPassword({
@@ -65,7 +68,7 @@ export const supabaseService = {
          password,
          options: {
            data: {
-             username,
+             username: cleanUsername,
              role: 'user' // Default role
            }
          }

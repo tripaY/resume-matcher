@@ -13,6 +13,7 @@
       >
         <el-menu-item index="/resumes">人才库 (Candidates)</el-menu-item>
         <el-menu-item index="/jobs">职位管理 (Jobs)</el-menu-item>
+        <el-menu-item index="/debug/llm">LLM 调试 (Debug)</el-menu-item>
       </el-menu>
     </el-header>
     <el-main class="main-content">

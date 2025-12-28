@@ -36,4 +36,7 @@ export const getMyResume = supabaseService.getMyResume
 export const updateMyResume = supabaseService.updateMyResume
 export const uploadAvatar = supabaseService.uploadAvatar
 
+// LLM
+export const callLLM = supabaseService.callLLM
+
 export default supabaseService

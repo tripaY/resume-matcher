@@ -24,8 +24,14 @@ const routes = [
     path: '/jobs/:id',
     component: () => import('../views/JobDetail.vue'),
     meta: { title: '职位详情' }
+  },
+  {
+    path: '/debug/llm',
+    component: () => import('../views/TestLLM.vue'),
+    meta: { title: 'LLM Debugger' }
   }
 ]
+
 
 const router = createRouter({
   history: createWebHashHistory(),
