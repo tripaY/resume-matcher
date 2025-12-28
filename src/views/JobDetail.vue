@@ -72,25 +72,24 @@
                     </div>
 
                     <div class="match-analysis">
-                        <div v-if="match.advantages.length" class="analysis-section">
-                            <span class="label success">优势:</span>
-                            <ul>
-                                <li v-for="adv in match.advantages" :key="adv">{{ adv }}</li>
-                            </ul>
-                        </div>
-                        <div v-if="match.disadvantages.length" class="analysis-section">
-                            <span class="label danger">劣势:</span>
-                            <ul>
-                                <li v-for="dis in match.disadvantages" :key="dis">{{ dis }}</li>
-                            </ul>
-                        </div>
-                         <el-collapse class="mt-2">
-                             <el-collapse-item title="查看详细打分理由">
-                                <ul class="reasons-list">
-                                    <li v-for="r in match.reasons" :key="r">{{ r }}</li>
-                                </ul>
-                             </el-collapse-item>
-                        </el-collapse>
+                         <!-- 硬性匹配分析 -->
+                         <div v-if="match.calculate_reason" class="analysis-section">
+                             <div class="reason-title">📊 硬性指标 ({{ match.calculate_score }}分)</div>
+                             <div class="reason-content">{{ match.calculate_reason }}</div>
+                         </div>
+                         
+                         <!-- LLM 匹配分析 -->
+                         <div class="analysis-section mt-2">
+                             <div class="reason-title">
+                                🤖 AI 评价 
+                                <span v-if="match.llm_score">({{ match.llm_score }}分)</span>
+                                <span v-else class="text-gray-400 text-xs">(分析中...)</span>
+                             </div>
+                             <div v-if="match.llm_reason" class="reason-content">{{ match.llm_reason }}</div>
+                             <div v-else class="loading-ai">
+                                <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读...
+                             </div>
+                         </div>
                     </div>
                     
                     <div class="card-footer">
@@ -107,7 +106,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
-import { Location, Money, User, Timer, School } from '@element-plus/icons-vue'
+import { Location, Money, User, Timer, School, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -150,11 +149,30 @@ const initData = async () => {
 
 const loadMatches = async () => {
     matchLoading.value = true
-    const matchRes = await supabaseService.getJobMatches(jobId)
-    if (matchRes.data) {
-        matches.value = matchRes.data
+    try {
+        const matchRes = await supabaseService.getJobMatches(jobId)
+        if (matchRes.data) {
+            matches.value = matchRes.data
+            
+             // Trigger LLM evaluation for matches missing llm_score
+            matches.value.forEach(async (match) => {
+                if (match.llm_score === null || match.llm_score === undefined) {
+                    try {
+                        const { data, error } = await supabaseService.evaluateMatch(match.resume.id, jobId)
+                        if (!error && data && data.success) {
+                            // Update local state
+                            match.llm_score = data.score
+                            match.llm_reason = data.reason
+                        }
+                    } catch (e) {
+                        console.error('Failed to evaluate match', e)
+                    }
+                }
+            })
+        }
+    } finally {
+        matchLoading.value = false
     }
-    matchLoading.value = false
 }
 
 const runMatching = async () => {
@@ -197,6 +215,7 @@ onMounted(async () => {
 .detail-container {
     max-width: 1400px;
     margin: 0 auto;
+    padding: 20px;
 }
 .mb-20 { margin-bottom: 20px; }
 .mr-2 { margin-right: 8px; }
@@ -242,87 +261,101 @@ onMounted(async () => {
 }
 
 .panel-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-bottom: 20px;
 }
 
+/* Match Card Styles */
 .match-card {
-    border-left: 4px solid transparent;
+    transition: all 0.3s;
 }
 .match-card:hover {
-    border-left-color: #409eff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
 }
-
 .match-header {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
 }
-
 .candidate-info h4 {
-    margin: 0;
+    margin: 0 0 5px 0;
     font-size: 18px;
+    color: #303133;
 }
 .sub-info {
-    font-size: 12px;
+    font-size: 13px;
     color: #909399;
 }
-
 .score-badge {
-    font-size: 24px;
+    font-size: 16px;
     font-weight: bold;
+    padding: 4px 10px;
+    border-radius: 4px;
 }
-.score-high { color: #67c23a; }
-.score-mid { color: #e6a23c; }
-.score-low { color: #f56c6c; }
+.score-badge.success { color: #67c23a; background: #f0f9eb; }
+.score-badge.warning { color: #e6a23c; background: #fdf6ec; }
+.score-badge.danger { color: #f56c6c; background: #fef0f0; }
 
 .resume-summary {
     display: flex;
     gap: 20px;
-    margin: 10px 0;
+    margin-bottom: 15px;
+    font-size: 14px;
     color: #606266;
-}
-.resume-summary span {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.match-analysis {
     background: #f5f7fa;
     padding: 10px;
     border-radius: 4px;
 }
+.resume-summary span {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
 
+/* Analysis Section Styles */
+.match-analysis {
+    margin-top: 15px;
+}
 .analysis-section {
-    margin-bottom: 5px;
+    margin-bottom: 12px;
+    padding: 12px;
+    background-color: #f8f9fa;
+    border-radius: 6px;
+    border: 1px solid #ebeef5;
 }
-.label {
-    font-weight: bold;
-    font-size: 13px;
+.reason-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: #303133;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
-.label.success { color: #67c23a; }
-.label.danger { color: #f56c6c; }
-
-.match-analysis ul {
-    margin: 4px 0 0 20px;
-    padding: 0;
+.reason-content {
     font-size: 13px;
     color: #606266;
+    white-space: pre-wrap;
+    line-height: 1.6;
 }
-
-.reasons-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    font-size: 12px;
+.loading-ai {
+    font-size: 13px;
     color: #909399;
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 0;
 }
 
 .card-footer {
-    margin-top: 10px;
-    text-align: right;
+    margin-top: 15px;
+    display: flex;
+    justify-content: flex-end;
+    border-top: 1px solid #eee;
+    padding-top: 10px;
 }
 </style>

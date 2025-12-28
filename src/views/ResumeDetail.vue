@@ -181,10 +181,24 @@
                     </div>
                     
                     <div class="match-analysis mt-2">
-                        <div v-if="match.reasons && match.reasons.length > 0">
-                            <span class="label">匹配分析:</span>
-                            <p class="reason-text">{{ match.reasons[0] }}</p>
-                        </div>
+                         <!-- 硬性匹配分析 -->
+                         <div v-if="match.calculate_reason" class="analysis-section">
+                             <div class="reason-title">📊 硬性指标 ({{ match.calculate_score }}分)</div>
+                             <div class="reason-content">{{ match.calculate_reason }}</div>
+                         </div>
+                         
+                         <!-- LLM 匹配分析 -->
+                         <div class="analysis-section mt-2">
+                             <div class="reason-title">
+                                🤖 AI 评价 
+                                <span v-if="match.llm_score">({{ match.llm_score }}分)</span>
+                                <span v-else class="text-gray-400 text-xs">(分析中...)</span>
+                             </div>
+                             <div v-if="match.llm_reason" class="reason-content">{{ match.llm_reason }}</div>
+                             <div v-else class="loading-ai">
+                                <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读...
+                             </div>
+                         </div>
                     </div>
                     
                     <div class="card-footer">
@@ -202,7 +216,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
-import { Location, Briefcase, Money, Delete, Plus } from '@element-plus/icons-vue'
+import { Location, Briefcase, Money, Delete, Plus, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -300,6 +314,22 @@ const loadMatches = async () => {
     try {
         const res = await supabaseService.getResumeMatches(resume.value.id)
         matches.value = res.data || []
+        
+        // Trigger LLM evaluation for matches missing llm_score
+        matches.value.forEach(async (match) => {
+            if (match.llm_score === null || match.llm_score === undefined) {
+                try {
+                    const { data, error } = await supabaseService.evaluateMatch(resume.value.id, match.job.id)
+                    if (!error && data && data.success) {
+                        // Update local state
+                        match.llm_score = data.score
+                        match.llm_reason = data.reason
+                    }
+                } catch (e) {
+                    console.error('Failed to evaluate match', e)
+                }
+            }
+        })
     } finally {
         matchLoading.value = false
     }
@@ -569,6 +599,40 @@ watch(() => route.path, () => {
     border-left-color: #409eff;
     transform: translateY(-2px);
 }
+
+.analysis-section {
+    margin-bottom: 8px;
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #ebeef5;
+}
+.reason-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #303133;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.reason-content {
+    font-size: 12px;
+    color: #606266;
+    white-space: pre-wrap;
+    line-height: 1.4;
+}
+.loading-ai {
+    font-size: 12px;
+    color: #909399;
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 0;
+}
+.text-gray-400 { color: #9ca3af; }
+.text-xs { font-size: 12px; }
 
 .match-header {
     display: flex;

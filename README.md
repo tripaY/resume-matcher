@@ -1,5 +1,28 @@
-# Vue 3 + TypeScript + Vite
+# 简历匹配系统 (Resume Matcher)
 
-This template should help get you started developing with Vue 3 and TypeScript in Vite. The template uses Vue 3 `<script setup>` SFCs, check out the [script setup docs](https://v3.vuejs.org/api/sfc-script-setup.html#sfc-script-setup) to learn more.
+这是一个基于 Vue 3 和 Supabase 开发的招聘匹配系统。
 
-Learn more about the recommended Project Setup and IDE Support in the [Vue Docs TypeScript Guide](https://vuejs.org/guide/typescript/overview.html#project-setup).
+## 技术选型
+
+了解到 Supabase 的功能后，做了如下改动
+
+1.  **用户系统**：利用 Supabase Auth 实现了用户管理。系统分为两类角色：
+    *   **应聘者**：开放注册，注册即为普通用户。
+    *   **管理员**：使用预设账号 (`admin` / `admin123`) 登录。
+2.  **文件存储**：使用 Supabase Storage 对象存储服务，实现了头像上传功能。
+3.  **AI 能力**：通过 **Supabase Edge Functions** (边缘函数) 实现了对大语言模型 (LLM) 的调用，用于mock数据生成和简历分析。
+4.  **核心逻辑**：大量业务逻辑（如数据自动关联、状态更新）直接由 **PostgreSQL** 的触发器 (Triggers) 和函数 (Functions) 承担。
+
+## 匹配度逻辑实现
+
+为了平衡系统响应速度和 AI 分析的深度，我设计了一套分阶段的评分展示机制：
+
+1.  **第一阶段：硬性指标计算 (实时)**
+    *   当简历或职位信息发生变更时，数据库触发器会立即执行计算函数。
+    *   根据学历、工作年限、技能匹配度等硬性指标，快速算出一个“基础分”。
+    *   **效果**：用户进入页面时，无需等待即可看到基于基础分排序的列表。
+
+2.  **第二阶段：AI 深度评估 (异步)**
+    *   对于列表中的匹配项，如果尚未进行 AI 评估，系统会异步调用 Edge Function 进行计算。
+    *   AI 评分生成后，数据库会自动更新最终的总分。
+    *   **效果**：页面会先展示基础排序，待 AI 计算完成后，自动平滑更新为更精准的混合排序结果。

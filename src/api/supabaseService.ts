@@ -589,7 +589,10 @@ export const supabaseService = {
        .from('match_evaluations')
        .select(`
           score,
-          reason,
+          llm_score,
+          calculate_score,
+          llm_reason,
+          calculate_reason,
           resumes (
             id,
             candidate_name,
@@ -609,19 +612,13 @@ export const supabaseService = {
      
      const result = data.map((item: any) => {
         let reasons = []
-        let advantages = []
-        let disadvantages = []
-        try {
-            if (item.reason && (item.reason.startsWith('{') || item.reason.startsWith('['))) {
-                const parsed = JSON.parse(item.reason)
-                reasons = parsed.reasons || []
-                advantages = parsed.advantages || []
-                disadvantages = parsed.disadvantages || []
-            } else if (item.reason) {
-                reasons = [item.reason]
-            }
-        } catch (e) {
-            reasons = [item.reason]
+        
+        if (item.calculate_reason) {
+             reasons.push(item.calculate_reason)
+        }
+        
+        if (item.llm_reason) {
+            reasons.push('LLM: ' + item.llm_reason)
         }
 
         return {
@@ -636,9 +633,11 @@ export const supabaseService = {
                 educations: item.resumes.educations 
             },
             score: item.score,
-            reasons,
-            advantages,
-            disadvantages
+            calculate_score: item.calculate_score,
+            llm_score: item.llm_score,
+            calculate_reason: item.calculate_reason,
+            llm_reason: item.llm_reason,
+            reasons
         }
      })
 
@@ -651,7 +650,10 @@ export const supabaseService = {
        .from('match_evaluations')
        .select(`
           score,
-          reason,
+          llm_score,
+          calculate_score,
+          llm_reason,
+          calculate_reason,
           jobs (
             id,
             title,
@@ -668,14 +670,14 @@ export const supabaseService = {
      
      const result = data.map((item: any) => {
          let reasons = []
-         try {
-             if (item.reason && (item.reason.startsWith('{') || item.reason.startsWith('['))) {
-                 const parsed = JSON.parse(item.reason)
-                 reasons = parsed.reasons || []
-             } else if (item.reason) {
-                 reasons = [item.reason]
-             }
-         } catch(e) { reasons = [item.reason] }
+         
+         if (item.calculate_reason) {
+             reasons.push(item.calculate_reason)
+         }
+         
+         if (item.llm_reason) {
+            reasons.push('LLM: ' + item.llm_reason)
+         }
 
          return {
             job: {
@@ -686,6 +688,10 @@ export const supabaseService = {
                 salary_range: `${item.jobs.salary_min}-${item.jobs.salary_max}`
             },
             score: item.score,
+            calculate_score: item.calculate_score,
+            llm_score: item.llm_score,
+            calculate_reason: item.calculate_reason,
+            llm_reason: item.llm_reason,
             reasons
          }
      })
@@ -746,8 +752,9 @@ export const supabaseService = {
       const { data, error } = await supabase.from('match_evaluations').upsert({
           resume_id: resumeId,
           job_id: jobId,
-          score: result.total_score,
-          reason: JSON.stringify(result.details),
+          calculate_score: result.calculate_score,
+          calculate_reason: result.calculate_reason,
+          score: result.calculate_score, // Initially set total score to calculate score
           is_valid: true
       }, { onConflict: 'resume_id,job_id' }).select().single()
       

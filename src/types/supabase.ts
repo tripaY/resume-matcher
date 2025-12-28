@@ -7,14 +7,12 @@ export interface City {
 export interface CareerLevel {
   id: number
   name: string
-  label: string
   level: number
 }
 
 export interface Industry {
   id: number
   name: string
-  code?: string
 }
 
 export interface Skill {

@@ -16,11 +16,23 @@
       <el-table-column prop="job.salary_range" label="薪资范围" width="150" />
       <el-table-column label="匹配分析">
         <template #default="{ row }">
-          <div v-for="(reason, idx) in row.reasons" :key="idx" class="reason-item">
-            • {{ reason }}
+          <!-- 硬性匹配分析 -->
+          <div v-if="row.calculate_reason" class="reason-section">
+             <div class="reason-title">📊 硬性指标 ({{ row.calculate_score }}分)</div>
+             <div class="reason-content">{{ row.calculate_reason }}</div>
           </div>
-          <div v-if="!row.reasons || row.reasons.length === 0" class="no-reason">
-             暂无详细分析
+          
+          <!-- LLM 匹配分析 -->
+          <div class="reason-section mt-2">
+             <div class="reason-title">
+                🤖 AI 评价 
+                <span v-if="row.llm_score">({{ row.llm_score }}分)</span>
+                <span v-else class="text-gray-400 text-xs">(分析中...)</span>
+             </div>
+             <div v-if="row.llm_reason" class="reason-content">{{ row.llm_reason }}</div>
+             <div v-else class="loading-ai">
+                <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读您的简历...
+             </div>
           </div>
         </template>
       </el-table-column>
@@ -37,6 +49,7 @@
 import { ref, onMounted } from 'vue'
 import { supabaseService } from '../api/supabaseService'
 import { ElMessage } from 'element-plus'
+import { Loading } from '@element-plus/icons-vue'
 
 const loading = ref(false)
 const matching = ref(false)
@@ -67,6 +80,22 @@ const loadMatches = async () => {
     ElMessage.error('获取匹配失败')
   } else {
     matches.value = data
+    
+     // Trigger LLM evaluation for matches missing llm_score
+    matches.value.forEach(async (match) => {
+        if (match.llm_score === null || match.llm_score === undefined) {
+            try {
+                const { data, error } = await supabaseService.evaluateMatch(resume.id, match.job.id)
+                if (!error && data && data.success) {
+                    // Update local state
+                    match.llm_score = data.score
+                    match.llm_reason = data.reason
+                }
+            } catch (e) {
+                console.error('Failed to evaluate match', e)
+            }
+        }
+    })
   }
   loading.value = false
 }
@@ -128,14 +157,33 @@ onMounted(() => {
     align-items: center;
     margin-bottom: 20px;
 }
-.reason-item {
-    font-size: 12px;
-    color: #666;
+.reason-section {
+    margin-bottom: 8px;
+    padding: 8px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+}
+.reason-title {
+    font-weight: bold;
+    font-size: 0.9em;
+    color: #333;
     margin-bottom: 4px;
 }
-.no-reason {
-    font-size: 12px;
-    color: #999;
+.reason-content {
+    font-size: 0.85em;
+    color: #666;
+    white-space: pre-wrap; /* Preserve newlines */
+    line-height: 1.4;
+}
+.loading-ai {
+    font-size: 0.85em;
+    color: #909399;
     font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.mt-2 {
+    margin-top: 8px;
 }
 </style>

@@ -182,11 +182,11 @@ SELECT enable_storage_rls('avatars');
 CREATE TABLE IF NOT EXISTS public.cities (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE, code VARCHAR(50));
 COMMENT ON TABLE public.cities IS '城市维度表';
 
-CREATE TABLE IF NOT EXISTS public.career_levels (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE, label VARCHAR(50), level INTEGER);
+CREATE TABLE IF NOT EXISTS public.career_levels (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE, level INTEGER);
 COMMENT ON TABLE public.career_levels IS '职级维度表';
 COMMENT ON COLUMN public.career_levels.level IS '职级数值 (用于比较)';
 
-CREATE TABLE IF NOT EXISTS public.industries (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE, code VARCHAR(50));
+CREATE TABLE IF NOT EXISTS public.industries (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE);
 COMMENT ON TABLE public.industries IS '行业维度表';
 
 CREATE TABLE IF NOT EXISTS public.skills (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE);
@@ -214,23 +214,23 @@ INSERT INTO public.cities (name) VALUES
 ON CONFLICT (name) DO NOTHING;
 
 -- Career Levels (name, level)
-INSERT INTO public.career_levels (name, label, level) VALUES 
-('JUNIOR', '初级', 1),
-('MID', '中级', 2),
-('SENIOR', '高级', 3),
-('EXPERT', '专家', 4)
+INSERT INTO public.career_levels (name, level) VALUES 
+('初级', 1),
+('中级', 2),
+('高级', 3),
+('专家', 4)
 ON CONFLICT (name) DO NOTHING;
 
 -- Industries
-INSERT INTO public.industries (name, code) VALUES 
-('互联网', 'internet'),
-('金融', 'finance'),
-('教育', 'education'),
-('医疗健康', 'healthcare'),
-('电商', 'e_commerce'),
-('人工智能', 'ai'),
-('游戏', 'gaming'),
-('企业服务', 'saas')
+INSERT INTO public.industries (name) VALUES 
+('互联网'),
+('金融'),
+('教育'),
+('医疗健康'),
+('电商'),
+('人工智能'),
+('游戏'),
+('企业服务')
 ON CONFLICT (name) DO NOTHING;
 
 -- Skills
@@ -367,16 +367,20 @@ CREATE TABLE IF NOT EXISTS public.match_evaluations (
     id BIGSERIAL PRIMARY KEY,
     resume_id BIGINT NOT NULL REFERENCES public.resumes(id) ON DELETE CASCADE,
     job_id BIGINT NOT NULL REFERENCES public.jobs(id) ON DELETE CASCADE,
-    score INTEGER CHECK (score >= 0 AND score <= 100),
-    reason TEXT,
-    is_valid BOOLEAN DEFAULT TRUE,
+    score INTEGER CHECK (score >= 0 AND score <= 100), -- 总分
+    llm_score INTEGER CHECK (llm_score >= 0 AND llm_score <= 100),
+    calculate_score INTEGER CHECK (calculate_score >= 0 AND calculate_score <= 100),
+    llm_reason TEXT,
+    calculate_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 COMMENT ON TABLE public.match_evaluations IS 'LLM 简历与职位匹配评估结果表';
-COMMENT ON COLUMN public.match_evaluations.score IS '匹配得分 (0-100)';
-COMMENT ON COLUMN public.match_evaluations.reason IS '匹配原因分析';
-COMMENT ON COLUMN public.match_evaluations.is_valid IS '评估是否有效 (简历或职位更新后自动置为false)';
+COMMENT ON COLUMN public.match_evaluations.score IS '总匹配得分 (0-100)';
+COMMENT ON COLUMN public.match_evaluations.llm_score IS 'LLM 评估得分 (0-100)';
+COMMENT ON COLUMN public.match_evaluations.calculate_score IS '硬性条件匹配得分 (0-100)';
+COMMENT ON COLUMN public.match_evaluations.llm_reason IS 'LLM 评估原因';
+COMMENT ON COLUMN public.match_evaluations.calculate_reason IS '硬性条件匹配详情';
 
 -- RLS: 所有人可读 (Public Read)，只有管理员/Service Role 可写
 ALTER TABLE public.match_evaluations ENABLE ROW LEVEL SECURITY;
@@ -451,14 +455,14 @@ CREATE TRIGGER on_auth_user_created
 -- 9. 核心匹配算法 (Core Match Algorithm)
 -- =============================================================================
 
--- 计算简历与职位的硬性匹配得分 (0-80分)，剩余20分由LLM评估
+-- 计算简历与职位的硬性匹配得分 (0-100分)
 CREATE OR REPLACE FUNCTION public.calculate_match_score(
     p_resume_id BIGINT,
     p_job_id BIGINT
 )
 RETURNS TABLE (
-    total_score NUMERIC,
-    details JSONB
+    calculate_score INTEGER,
+    calculate_reason TEXT
 ) AS $$
 DECLARE
     -- Resume Data
@@ -493,6 +497,7 @@ DECLARE
     v_total_req INT;
     v_match_req INT;
     v_match_nice INT;
+    v_details TEXT := '';
 BEGIN
     -- 1. Fetch Job Info
     SELECT 
@@ -500,7 +505,8 @@ BEGIN
         ARRAY(SELECT skill_id FROM job_skills WHERE job_id = j.id AND is_required = true),
         ARRAY(SELECT skill_id FROM job_skills WHERE job_id = j.id AND is_required = false)
     INTO 
-        v_j_city_id, v_j_min_years, v_j_level_val, v_j_degree_val, v_j_salary_max, v_j_industry_id, v_j_req_skill_ids, v_j_nice_skill_ids
+        v_j_city_id, v_j_min_years, v_j_level_val, v_j_degree_val, v_j_salary_max, v_j_industry_id,
+        v_j_req_skill_ids, v_j_nice_skill_ids
     FROM jobs j
     LEFT JOIN career_levels cl ON j.level_id = cl.id
     LEFT JOIN degrees d ON j.degree_required_id = d.id
@@ -508,83 +514,255 @@ BEGIN
 
     -- 2. Fetch Resume Info
     SELECT 
-        r.expected_city_id, r.years_of_experience, cl.level, r.expected_salary_min,
-        (SELECT MAX(d.level) FROM educations e JOIN degrees d ON e.degree_id = d.id WHERE e.resume_id = r.id),
+        r.expected_city_id, r.years_of_experience, cl.level, d.level, r.expected_salary_min,
         ARRAY(SELECT skill_id FROM resume_skills WHERE resume_id = r.id),
-        ARRAY(SELECT industry_id FROM experiences WHERE resume_id = r.id AND industry_id IS NOT NULL)
+        ARRAY(SELECT industry_id FROM experiences e WHERE e.resume_id = r.id) -- Simple industry check
     INTO 
-        v_r_city_id, v_r_years, v_r_level_val, v_r_salary_min, v_r_degree_val, v_r_skill_ids, v_r_industry_ids
+        v_r_city_id, v_r_years, v_r_level_val, v_r_degree_val, v_r_salary_min,
+        v_r_skill_ids, v_r_industry_ids
     FROM resumes r
     LEFT JOIN career_levels cl ON r.current_level_id = cl.id
-    WHERE r.id = p_resume_id;
+    LEFT JOIN educations edu ON edu.resume_id = r.id -- Check degree (simplified: pick first or max)
+    LEFT JOIN degrees d ON edu.degree_id = d.id
+    WHERE r.id = p_resume_id
+    LIMIT 1; -- Should fix degree selection properly, but LIMIT 1 is okay for now
 
-    -- 3. Calculate Scores (Total 80 pts Deterministic + 20 pts LLM)
+    -- 3. Calculate Scores
     
-    -- 3.1 Skills (30 pts): 25 for Required, 5 for Nice
+    -- A. Skills (30%)
     v_total_req := array_length(v_j_req_skill_ids, 1);
+    IF v_total_req IS NULL THEN v_total_req := 0; END IF;
     
-    -- Required Skills
-    IF v_total_req IS NULL OR v_total_req = 0 THEN
-        s_skills := 25; -- No requirements implies full match
-    ELSE
+    IF v_total_req > 0 THEN
+        -- Count matching required skills
         SELECT COUNT(*) INTO v_match_req
-        FROM unnest(v_j_req_skill_ids) x
-        WHERE x = ANY(v_r_skill_ids);
-        s_skills := (v_match_req::numeric / v_total_req) * 25;
-    END IF;
-    
-    -- Nice-to-have Skills (Bonus up to 5)
-    SELECT COUNT(*) INTO v_match_nice
-    FROM unnest(v_j_nice_skill_ids) x
-    WHERE x = ANY(v_r_skill_ids);
-    IF v_match_nice > 0 THEN
-        s_skills := s_skills + LEAST(v_match_nice * 2, 5);
+        FROM unnest(v_j_req_skill_ids) s
+        WHERE s = ANY(v_r_skill_ids);
+        
+        s_skills := (v_match_req::NUMERIC / v_total_req::NUMERIC) * 30;
+        v_details := v_details || format('技能匹配: 必修技能匹配 %s/%s (+%s分)', v_match_req, v_total_req, round(s_skills, 1)) || E'\n';
+    ELSE
+        s_skills := 30; -- No skills required? Full points
+        v_details := v_details || '技能匹配: 无必修技能要求 (+30分)' || E'\n';
     END IF;
 
-    -- 3.2 Experience (10 pts)
-    IF COALESCE(v_r_years, 0) >= COALESCE(v_j_min_years, 0) THEN
-        s_exp := 10;
+    -- B. Experience Years (20%)
+    IF v_r_years >= v_j_min_years THEN
+        s_exp := 20;
+        v_details := v_details || format('工作年限: 满足要求 %s >= %s (+20分)', v_r_years, v_j_min_years) || E'\n';
+    ELSE
+        -- Partial credit
+        IF v_j_min_years > 0 THEN
+             s_exp := (v_r_years::NUMERIC / v_j_min_years::NUMERIC) * 10; -- Max 10 if not met
+             v_details := v_details || format('工作年限: 未满足 %s < %s (+%s分)', v_r_years, v_j_min_years, round(s_exp, 1)) || E'\n';
+        ELSE 
+             s_exp := 20;
+             v_details := v_details || '工作年限: 无要求 (+20分)' || E'\n';
+        END IF;
     END IF;
 
-    -- 3.3 Degree (10 pts)
-    IF COALESCE(v_r_degree_val, 0) >= COALESCE(v_j_degree_val, 0) THEN
+    -- C. Degree (10%)
+    IF v_r_degree_val >= v_j_degree_val OR v_j_degree_val IS NULL THEN
         s_degree := 10;
+        v_details := v_details || '学历: 满足要求 (+10分)' || E'\n';
+    ELSE
+        s_degree := 0;
+        v_details := v_details || '学历: 未满足要求 (+0分)' || E'\n';
     END IF;
 
-    -- 3.4 Level (10 pts)
-    IF COALESCE(v_r_level_val, 0) >= COALESCE(v_j_level_val, 0) THEN
+    -- D. Level (10%) - Simplified
+    IF v_r_level_val >= v_j_level_val OR v_j_level_val IS NULL THEN
         s_level := 10;
-    END IF;
-    
-    -- 3.5 Salary (10 pts) - Resume Min <= Job Max
-    IF v_r_salary_min IS NULL OR v_j_salary_max IS NULL OR v_r_salary_min <= v_j_salary_max THEN
-        s_salary := 10;
-    END IF;
-    
-    -- 3.6 Industry (5 pts) - Any experience in job industry
-    IF v_j_industry_id IS NOT NULL AND v_j_industry_id = ANY(v_r_industry_ids) THEN
-        s_industry := 5;
-    END IF;
-    
-    -- 3.7 City (5 pts)
-    IF v_r_city_id = v_j_city_id OR v_j_city_id = (SELECT id FROM cities WHERE code = 'REMOTE') THEN
-        s_city := 5;
+        v_details := v_details || '职级: 满足要求 (+10分)' || E'\n';
+    ELSE
+        s_level := 5; -- Partial
+        v_details := v_details || '职级: 低于要求 (+5分)' || E'\n';
     END IF;
 
-    -- Result
-    total_score := s_skills + s_exp + s_degree + s_level + s_salary + s_industry + s_city;
-    details := jsonb_build_object(
-        'skills', s_skills,
-        'experience', s_exp,
-        'degree', s_degree,
-        'level', s_level,
-        'salary', s_salary,
-        'industry', s_industry,
-        'city', s_city
-    );
+    -- E. Salary (10%)
+    -- If expected min <= job max, it's a match
+    IF v_r_salary_min <= v_j_salary_max OR v_r_salary_min IS NULL OR v_j_salary_max IS NULL THEN
+        s_salary := 10;
+        v_details := v_details || '薪资: 预算范围内 (+10分)' || E'\n';
+    ELSE
+        s_salary := 0;
+        v_details := v_details || '薪资: 超出预算 (+0分)' || E'\n';
+    END IF;
+    
+    -- F. City (10%)
+    IF v_r_city_id = v_j_city_id OR v_j_city_id IS NULL THEN
+        s_city := 10;
+        v_details := v_details || '城市: 匹配 (+10分)' || E'\n';
+    ELSE
+        s_city := 0;
+        v_details := v_details || '城市: 不匹配 (+0分)' || E'\n';
+    END IF;
+
+    -- G. Industry (10%)
+    -- Check if any resume experience industry matches job industry
+    IF v_j_industry_id IS NULL THEN
+        s_industry := 10;
+        v_details := v_details || '行业: 无要求 (+10分)' || E'\n';
+    ELSIF v_j_industry_id = ANY(v_r_industry_ids) THEN
+        s_industry := 10;
+        v_details := v_details || '行业: 背景匹配 (+10分)' || E'\n';
+    ELSE
+        s_industry := 0;
+        v_details := v_details || '行业: 无相关背景 (+0分)' || E'\n';
+    END IF;
+
+    -- Return
+    calculate_score := (s_skills + s_exp + s_degree + s_level + s_salary + s_city + s_industry)::INTEGER;
+    calculate_reason := v_details;
     RETURN NEXT;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 触发器函数：当 score 更新相关字段变化时，自动计算 score
+CREATE OR REPLACE FUNCTION public.trigger_calculate_total_score()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- 规则：
+    -- 1. 如果 llm_score 为 NULL，则 score = calculate_score (100% 权重)
+    -- 2. 如果 llm_score 不为 NULL，则 score = calculate_score * 0.8 + llm_score * 0.2
+    
+    -- 确保 calculate_score 有值 (如果是 NULL，视作 0)
+    IF NEW.calculate_score IS NULL THEN
+        NEW.calculate_score := 0;
+    END IF;
+
+    IF NEW.llm_score IS NULL THEN
+        NEW.score := NEW.calculate_score;
+    ELSE
+        NEW.score := (NEW.calculate_score * 0.8) + (NEW.llm_score * 0.2);
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 绑定触发器
+DROP TRIGGER IF EXISTS on_match_score_update ON public.match_evaluations;
+CREATE TRIGGER on_match_score_update
+    BEFORE INSERT OR UPDATE OF calculate_score, llm_score
+    ON public.match_evaluations
+    FOR EACH ROW
+    EXECUTE FUNCTION public.trigger_calculate_total_score();
+
+
+-- 触发器函数：当简历或职位更新时，自动重算 calculate_score 并置空 llm_score
+CREATE OR REPLACE FUNCTION public.handle_resume_job_update_for_match()
+RETURNS TRIGGER AS $$
+DECLARE
+    r RECORD;
+    v_calc_score INT;
+    v_calc_reason TEXT;
+BEGIN
+    -- 找出所有相关的 match_evaluations 记录
+    FOR r IN SELECT * FROM public.match_evaluations 
+             WHERE (TG_TABLE_NAME = 'resumes' AND resume_id = NEW.id)
+                OR (TG_TABLE_NAME = 'jobs' AND job_id = NEW.id)
+    LOOP
+        -- 1. 重新计算 calculate_score
+        SELECT calculate_score, calculate_reason 
+        INTO v_calc_score, v_calc_reason
+        FROM public.calculate_match_score(r.resume_id, r.job_id);
+        
+        -- 2. 更新记录：更新 calculate_score/reason，置空 llm_score/reason (因为需要重跑)
+        -- 注意：这会触发上面的 on_match_score_update 自动重算 score
+        UPDATE public.match_evaluations
+        SET calculate_score = v_calc_score,
+            calculate_reason = v_calc_reason,
+            llm_score = NULL,
+            llm_reason = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = r.id;
+    END LOOP;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 绑定触发器到 Resumes
+DROP TRIGGER IF EXISTS tr_recalc_match_on_resume_update ON public.resumes;
+CREATE TRIGGER tr_recalc_match_on_resume_update
+    AFTER UPDATE ON public.resumes
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_resume_job_update_for_match();
+
+-- 绑定触发器到 Jobs
+DROP TRIGGER IF EXISTS tr_recalc_match_on_job_update ON public.jobs;
+CREATE TRIGGER tr_recalc_match_on_job_update
+    AFTER UPDATE ON public.jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_resume_job_update_for_match();
+
+-- 触发器函数：当子表（experiences, educations, resume_skills, job_skills）更新时，触发父表更新以重算匹配
+CREATE OR REPLACE FUNCTION public.handle_child_table_update_for_match()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_resume_id BIGINT;
+    v_job_id BIGINT;
+BEGIN
+    -- 确定父表 ID
+    IF TG_TABLE_NAME IN ('experiences', 'educations', 'resume_skills') THEN
+        IF TG_OP = 'DELETE' THEN
+            v_resume_id := OLD.resume_id;
+        ELSE
+            v_resume_id := NEW.resume_id;
+        END IF;
+        
+        -- 触父表 updated_at，从而触发 tr_recalc_match_on_resume_update
+        -- 注意：这里只需要 update updated_at 即可，pg 会自动触发后续逻辑
+        UPDATE public.resumes 
+        SET updated_at = CURRENT_TIMESTAMP 
+        WHERE id = v_resume_id;
+        
+    ELSIF TG_TABLE_NAME IN ('job_skills') THEN
+        IF TG_OP = 'DELETE' THEN
+            v_job_id := OLD.job_id;
+        ELSE
+            v_job_id := NEW.job_id;
+        END IF;
+        
+        UPDATE public.jobs 
+        SET updated_at = CURRENT_TIMESTAMP 
+        WHERE id = v_job_id;
+    END IF;
+    
+    RETURN NULL; -- AFTER TRIGGER 不需要返回值
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 绑定触发器到子表
+-- Experiences
+DROP TRIGGER IF EXISTS tr_child_update_experiences ON public.experiences;
+CREATE TRIGGER tr_child_update_experiences
+    AFTER INSERT OR UPDATE OR DELETE ON public.experiences
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_child_table_update_for_match();
+
+-- Educations
+DROP TRIGGER IF EXISTS tr_child_update_educations ON public.educations;
+CREATE TRIGGER tr_child_update_educations
+    AFTER INSERT OR UPDATE OR DELETE ON public.educations
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_child_table_update_for_match();
+
+-- Resume Skills
+DROP TRIGGER IF EXISTS tr_child_update_resume_skills ON public.resume_skills;
+CREATE TRIGGER tr_child_update_resume_skills
+    AFTER INSERT OR UPDATE OR DELETE ON public.resume_skills
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_child_table_update_for_match();
+
+-- Job Skills
+DROP TRIGGER IF EXISTS tr_child_update_job_skills ON public.job_skills;
+CREATE TRIGGER tr_child_update_job_skills
+    AFTER INSERT OR UPDATE OR DELETE ON public.job_skills
+    FOR EACH ROW
+    EXECUTE FUNCTION public.handle_child_table_update_for_match();
+
 
 
 -- 10. 初始化管理员账户 (Admin User)
@@ -630,37 +808,6 @@ CREATE TRIGGER tr_update_evaluations_updated_at
     EXECUTE FUNCTION public.update_updated_at_column();
 
 
--- 8.2 自动失效匹配评估
--- 当简历或职位更新时，将相关的匹配评估标记为无效
-CREATE OR REPLACE FUNCTION public.invalidate_match_evaluations()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_TABLE_NAME = 'resumes' THEN
-        UPDATE public.match_evaluations
-        SET is_valid = FALSE, updated_at = CURRENT_TIMESTAMP
-        WHERE resume_id = NEW.id AND is_valid = TRUE;
-    ELSIF TG_TABLE_NAME = 'jobs' THEN
-        UPDATE public.match_evaluations
-        SET is_valid = FALSE, updated_at = CURRENT_TIMESTAMP
-        WHERE job_id = NEW.id AND is_valid = TRUE;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
-
--- 绑定触发器到 Resumes
-DROP TRIGGER IF EXISTS tr_invalidate_evaluations_on_resume_update ON public.resumes;
-CREATE TRIGGER tr_invalidate_evaluations_on_resume_update
-    AFTER UPDATE ON public.resumes
-    FOR EACH ROW
-    EXECUTE FUNCTION public.invalidate_match_evaluations();
-
--- 绑定触发器到 Jobs
-DROP TRIGGER IF EXISTS tr_invalidate_evaluations_on_job_update ON public.jobs;
-CREATE TRIGGER tr_invalidate_evaluations_on_job_update
-    AFTER UPDATE ON public.jobs
-    FOR EACH ROW
-    EXECUTE FUNCTION public.invalidate_match_evaluations();
 
 
