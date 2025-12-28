@@ -28,7 +28,46 @@ export interface Degree {
   level: number
 }
 
-// Frontend Display Models (DTOs)
+export interface Profile {
+  id: string // UUID matching auth.users
+  role_id: string
+  avatar_id?: string | null // UUID referencing storage.objects
+  created_at?: string
+  updated_at?: string
+}
+
+// DB Row Interfaces (Directly mapping to DB tables)
+export interface Job {
+  id: number
+  user_id: string
+  title: string
+  city_id: number | null
+  min_years: number
+  level_id: number | null
+  degree_required_id: number | null
+  industry_id: number | null
+  salary_min: number | null
+  salary_max: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+export interface Resume {
+  id: number
+  user_id: string
+  candidate_name: string
+  gender: 'M' | 'F' | null
+  expected_city_id: number | null
+  years_of_experience: number
+  current_level_id: number | null
+  expected_title: string | null
+  expected_salary_min: number | null
+  expected_salary_max: number | null
+  created_at?: string
+  updated_at?: string
+}
+
+// Frontend Display Models (DTOs) - Kept for View compatibility
 export interface JobDTO {
   id: number
   title: string
@@ -60,13 +99,14 @@ export interface ResumeDTO {
   skills: string[]
   degree: string
   gender?: string
+  avatar_url?: string | null // Computed from Profile
   educations?: any[]
 }
 
 export interface MetaData {
-  cities: string[]
-  levels: string[]
-  skills: string[]
-  industries: string[]
-  degrees: string[]
+  cities: City[]
+  levels: CareerLevel[]
+  skills: Skill[]
+  industries: Industry[]
+  degrees: Degree[]
 }

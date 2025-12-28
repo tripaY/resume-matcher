@@ -4,27 +4,27 @@
       <el-form :inline="true" :model="filters" class="demo-form-inline">
         <el-form-item label="城市">
           <el-select v-model="filters.city" placeholder="选择城市" clearable>
-            <el-option v-for="c in meta.cities" :key="c" :label="c" :value="c" />
+            <el-option v-for="c in metaStore.cities" :key="c.id" :label="c.name" :value="c.name" />
           </el-select>
         </el-form-item>
         <el-form-item label="职级">
           <el-select v-model="filters.level" placeholder="选择职级" clearable>
-            <el-option v-for="l in meta.levels" :key="l" :label="l" :value="l" />
+            <el-option v-for="l in metaStore.levels" :key="l.id" :label="l.name" :value="l.name" />
           </el-select>
         </el-form-item>
         <el-form-item label="技能">
           <el-select v-model="filters.skill" placeholder="具备技能" clearable>
-             <el-option v-for="s in meta.skills" :key="s" :label="s" :value="s" />
+             <el-option v-for="s in metaStore.skills" :key="s.id" :label="s.name" :value="s.name" />
           </el-select>
         </el-form-item>
         <el-form-item label="行业">
           <el-select v-model="filters.industry" placeholder="行业背景" clearable>
-             <el-option v-for="i in meta.industries" :key="i" :label="i" :value="i" />
+             <el-option v-for="i in metaStore.industries" :key="i.id" :label="i.name" :value="i.name" />
           </el-select>
         </el-form-item>
         <el-form-item label="学历">
           <el-select v-model="filters.degree" placeholder="最低学历" clearable>
-             <el-option v-for="d in meta.degrees" :key="d" :label="d" :value="d" />
+             <el-option v-for="d in metaStore.degrees" :key="d.id" :label="d.name" :value="d.name" />
           </el-select>
         </el-form-item>
         <el-form-item label="最低年限">
@@ -82,22 +82,17 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getResumes, getMeta } from '../api'
+import { getResumes } from '../api'
+import { useMetaStore } from '../stores/metaStore'
+import type { ResumeDTO } from '../types/supabase'
 
 const router = useRouter()
+const metaStore = useMetaStore()
 const loading = ref(false)
-const tableData = ref([])
+const tableData = ref<ResumeDTO[]>([])
 const total = ref(0)
 const currentPage = ref(1)
 const pageSize = ref(20)
-
-const meta = reactive({
-    cities: [],
-    levels: [],
-    skills: [],
-    industries: [],
-    degrees: []
-})
 
 const filters = reactive({
     city: '',
@@ -105,22 +100,13 @@ const filters = reactive({
     skill: '',
     industry: '',
     degree: '',
-    min_years: undefined
+    min_years: undefined as number | undefined
 })
-
-const fetchMeta = async () => {
-    try {
-        const res = await getMeta()
-        Object.assign(meta, res.data)
-    } catch (e) {
-        console.error(e)
-    }
-}
 
 const fetchData = async () => {
     loading.value = true
     try {
-        const params = {
+        const params: any = {
             ...filters,
             skip: (currentPage.value - 1) * pageSize.value,
             limit: pageSize.value
@@ -133,6 +119,10 @@ const fetchData = async () => {
         })
         
         const res = await getResumes(params)
+        if (res.error) {
+            console.error(res.error)
+            return
+        }
         tableData.value = res.data.items
         total.value = res.data.total
     } catch (e) {
@@ -167,7 +157,6 @@ const viewDetail = (id: number) => {
 }
 
 onMounted(() => {
-    fetchMeta()
     fetchData()
 })
 </script>
