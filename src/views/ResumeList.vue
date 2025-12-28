@@ -58,10 +58,13 @@
               <span v-if="scope.row.skills.length > 3">...</span>
           </template>
       </el-table-column>
-      <el-table-column label="操作" width="150" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">
-          <el-button type="primary" size="small" @click="viewDetail(scope.row.id)">
-            详情 & 匹配
+          <el-button size="small" @click="viewDetail(scope.row.id)">
+            详情
+          </el-button>
+          <el-button type="primary" size="small" @click="viewMatch(scope.row.id)">
+            智能匹配
           </el-button>
         </template>
       </el-table-column>
@@ -70,9 +73,11 @@
     <div class="pagination">
       <el-pagination
         v-model:current-page="currentPage"
-        :page-size="pageSize"
+        v-model:page-size="pageSize"
+        :page-sizes="[5, 10, 20]"
         :total="total"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
         @current-change="handlePageChange"
       />
     </div>
@@ -147,8 +152,18 @@ const handlePageChange = (val: number) => {
     loadData()
 }
 
+const handleSizeChange = (val: number) => {
+    pageSize.value = val
+    currentPage.value = 1
+    loadData()
+}
+
 const viewDetail = (id: number) => {
     router.push(`/resumes/${id}`)
+}
+
+const viewMatch = (id: number) => {
+    router.push({ path: `/resumes/${id}`, query: { action: 'match' } })
 }
 
 onMounted(() => {

@@ -421,11 +421,8 @@ COMMENT ON COLUMN public.match_evaluations.calculate_reason IS '硬性条件匹�
 -- RLS: 所有人可读 (Public Read)，只有管理员/Service Role 可写
 ALTER TABLE public.match_evaluations ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Evaluations Public Read" ON public.match_evaluations
-    FOR SELECT USING (true);
-
-CREATE POLICY "Evaluations Admin Write" ON public.match_evaluations
-    FOR ALL USING (public.is_admin()) WITH CHECK (public.is_admin());
+CREATE POLICY "Evaluations Admin Access" ON public.match_evaluations
+    FOR ALL USING (true);
 
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_match_evaluations_resume_id ON public.match_evaluations(resume_id);

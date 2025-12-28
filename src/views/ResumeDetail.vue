@@ -10,6 +10,74 @@
         </el-empty>
     </div>
 
+    <!-- Match Mode View -->
+    <div v-else-if="showMatchMode" key="match-content" class="content-layout">
+        <div class="fixed-header">
+             <div class="header-content flex justify-between items-center">
+                <el-button @click="closeMatches">
+                    <el-icon class="mr-1"><Back /></el-icon> 返回简历详情
+                </el-button>
+             </div>
+        </div>
+
+        <div class="scrollable-content">
+            <div class="match-container" style="max-width: 1200px; margin: 0 auto;">
+                <el-table :data="matchTableData" v-loading="matchTableLoading" stripe border>
+                    <el-table-column prop="id" label="ID" width="80" align="center" />
+                    <el-table-column prop="title" label="职位名称" width="200" show-overflow-tooltip />
+                    <el-table-column prop="city" label="城市" width="100" align="center" />
+                    <el-table-column label="匹配度" width="120" sortable prop="match_score" align="center">
+                        <template #default="scope">
+                            <el-tag :type="getScoreType(scope.row.match_score)" effect="dark">
+                                {{ scope.row.match_score }}分
+                            </el-tag>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="匹配分析" min-width="300">
+                        <template #default="scope">
+                            <div v-if="scope.row.match_info.calculate_reason" class="text-sm text-gray-600 mb-2">
+                                <span class="font-bold">规则匹配:</span> {{ scope.row.match_info.calculate_reason }}
+                            </div>
+                            <div v-if="scope.row.match_info.llm_score" class="p-2 bg-blue-50 rounded">
+                                <div class="flex items-center gap-2 mb-1">
+                                    <span class="font-bold text-blue-600">AI 评分: {{ scope.row.match_info.llm_score }}</span>
+                                </div>
+                                <div class="text-xs text-gray-600 leading-relaxed">
+                                    {{ scope.row.match_info.llm_reason }}
+                                </div>
+                            </div>
+                            <div v-else class="loading-ai">
+                                <el-icon class="is-loading"><Loading /></el-icon> AI正在深度分析中...
+                            </div>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="薪资范围" width="150" align="center">
+                         <template #default="scope">
+                             {{ scope.row.salary_min }} - {{ scope.row.salary_max }}
+                         </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="100" fixed="right" align="center">
+                        <template #default="scope">
+                            <el-button type="primary" link @click="viewJobDetail(scope.row.id)">查看职位</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+                
+                <div class="pagination mt-4 flex justify-end bg-white p-4">
+                    <el-pagination
+                        v-model:current-page="matchPage"
+                        v-model:page-size="matchPageSize"
+                        :page-sizes="[5, 10, 20]"
+                        :total="matchTotal"
+                        layout="total, sizes, prev, pager, next, jumper"
+                        @size-change="handleMatchSizeChange"
+                        @current-change="handleMatchPageChange"
+                    />
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div v-else key="content" class="content-layout">
         <div class="fixed-header">
              <div class="header-content flex justify-end gap-2">
@@ -284,56 +352,8 @@
         </div>
         </div>
 
-        <!-- Job Matches Dialog -->
-        <el-dialog v-model="showMatchDialog" title="智能岗位匹配" width="80%" destroy-on-close>
-            <div class="match-dialog-content">
-                <el-table :data="matchTableData" v-loading="matchTableLoading" stripe>
-                    <el-table-column prop="id" label="ID" width="80" />
-                    <el-table-column prop="title" label="职位名称" width="180" />
-                    <el-table-column prop="city" label="城市" width="100" />
-                    <el-table-column label="匹配度" width="120" sortable prop="match_score">
-                        <template #default="scope">
-                            <span :class="getScoreClass(scope.row.match_score)">{{ scope.row.match_score }}分</span>
-                        </template>
-                    </el-table-column>
-                    <el-table-column label="匹配分析" min-width="200">
-                        <template #default="scope">
-                            <div v-if="scope.row.match_info.calculate_reason" class="text-xs text-gray-500 line-clamp-2">
-                                {{ scope.row.match_info.calculate_reason }}
-                            </div>
-                            <div v-if="scope.row.match_info.llm_score" class="text-xs text-blue-500 mt-1">
-                                AI: {{ scope.row.match_info.llm_score }}分
-                            </div>
-                            <div v-else class="text-xs text-gray-400 mt-1 italic">
-                                 AI 分析中...
-                            </div>
-                        </template>
-                    </el-table-column>
-                    <el-table-column label="薪资范围" width="150">
-                         <template #default="scope">
-                             {{ scope.row.salary_min }} - {{ scope.row.salary_max }}
-                         </template>
-                    </el-table-column>
-                    <el-table-column label="操作" width="100" fixed="right">
-                        <template #default="scope">
-                            <el-button type="primary" size="small" @click="viewJobDetail(scope.row.id)">详情</el-button>
-                        </template>
-                    </el-table-column>
-                </el-table>
-                
-                <div class="pagination mt-4 flex justify-end">
-                    <el-pagination
-                        v-model:current-page="matchPage"
-                        v-model:page-size="matchPageSize"
-                        :page-sizes="[5, 10, 20]"
-                        :total="matchTotal"
-                        layout="total, sizes, prev, pager, next, jumper"
-                        @size-change="handleMatchSizeChange"
-                        @current-change="handleMatchPageChange"
-                    />
-                </div>
-            </div>
-        </el-dialog>
+
+        <!-- Removed Dialog -->
     </div>
 
   </div>
@@ -344,7 +364,7 @@ import { ref, onMounted, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
-import { Delete, Plus } from '@element-plus/icons-vue'
+import { Delete, Plus, Back, Loading } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -361,8 +381,8 @@ const currentUser = ref<any>(null)
 const isCreating = ref(false)
 const isEditing = ref(false)
 
-// Match Dialog State
-const showMatchDialog = ref(false)
+// Match State
+const showMatchMode = ref(false)
 const matchTableData = ref<any[]>([])
 const matchTableLoading = ref(false)
 const matchPage = ref(1)
@@ -426,10 +446,27 @@ const getSkillNames = (ids: number[]) => {
 }
 
 // Methods
-const getScoreClass = (score: number) => {
-    if (score >= 80) return 'score-high'
-    if (score >= 60) return 'score-mid'
-    return 'score-low'
+const getScoreType = (score: number) => {
+    if (score >= 80) return 'success'
+    if (score >= 60) return 'warning'
+    return 'danger'
+}
+
+const openMatches = () => {
+    showMatchMode.value = true
+    loadMatches()
+}
+
+const closeMatches = () => {
+    showMatchMode.value = false
+    // remove query param without reloading
+    const query = { ...route.query }
+    delete query.action
+    router.replace({ query })
+}
+
+const toggleMatches = () => {
+    openMatches()
 }
 
 const startCreating = () => {
@@ -618,10 +655,7 @@ const toggleEdit = () => {
     }
 }
 
-const toggleMatches = () => {
-    showMatchDialog.value = true
-    loadMatches()
-}
+
 
 const handleMatchSizeChange = (val: number) => {
     matchPageSize.value = val
@@ -705,8 +739,11 @@ const uploadAvatar = async (options: any) => {
 
 // Remove old saveResume method as it's replaced by handleSave
 
-onMounted(() => {
-    initData()
+onMounted(async () => {
+    await initData()
+    if (route.query.action === 'match') {
+        openMatches()
+    }
 })
 
 watch(() => route.path, () => {

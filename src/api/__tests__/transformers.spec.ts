@@ -25,15 +25,21 @@ describe('Supabase Transformers', () => {
       id: 1,
       title: 'Frontend Engineer',
       city: 'Shanghai',
+      city_id: undefined,
       min_years: 3,
       level: 'Senior',
+      level_id: undefined,
       salary_min: 20000,
       salary_max: 30000,
       degree: 'Bachelor',
       degree_required: 'Bachelor',
+      degree_required_id: undefined,
       industry: 'Internet',
+      industry_id: undefined,
       required_skills: ['Vue', 'TypeScript'],
+      required_skill_ids: [],
       nice_to_have_skills: ['Node.js'],
+      nice_skill_ids: [],
       description: 'Vue 3 expert needed'
     }
 

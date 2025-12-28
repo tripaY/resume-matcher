@@ -195,6 +195,9 @@ export const supabaseService = {
         // job_skills.skills.name
         query = query.filter('job_skills.skills.name', 'eq', params.skill)
     }
+
+    // Sort by updateTime desc
+    query = query.order('updated_at', { ascending: false })
     
     // Pagination
     let from = 0
@@ -395,6 +398,9 @@ export const supabaseService = {
     if (params.industry) {
         query = query.filter('experiences.industries.name', 'eq', params.industry)
     }
+
+    // Sort by updateTime desc
+    query = query.order('updated_at', { ascending: false })
 
     // Pagination
     let from = 0
@@ -854,45 +860,10 @@ export const supabaseService = {
   },
 
   async evaluateMatch(resumeId: number, jobId: number): Promise<{ data: any, error: any }> {
-      // Call RPC
-      const { data: scoreData, error: rpcError } = await supabase.rpc('calculate_match_score', {
-          p_resume_id: resumeId,
-          p_job_id: jobId
+      // Call Edge Function 'evaluate-match' for LLM scoring
+      const { data, error } = await supabase.functions.invoke('evaluate-match', {
+          body: { resumeId, jobId }
       })
-      
-      if (rpcError) return { data: null, error: rpcError }
-      
-      if (!scoreData || scoreData.length === 0) return { data: null, error: 'No score returned' }
-      
-      const result = scoreData[0]
-      
-      // Check existing evaluation to avoid constraint errors
-      const { data: existing } = await supabase
-          .from('match_evaluations')
-          .select('id')
-          .eq('resume_id', resumeId)
-          .eq('job_id', jobId)
-          .maybeSingle()
-
-      let op
-      if (existing) {
-          op = supabase.from('match_evaluations').update({
-              calculate_score: result.calculate_score,
-              calculate_reason: result.calculate_reason,
-              score: result.calculate_score
-          }).eq('id', existing.id)
-      } else {
-          op = supabase.from('match_evaluations').insert({
-              resume_id: resumeId,
-              job_id: jobId,
-              calculate_score: result.calculate_score,
-              calculate_reason: result.calculate_reason,
-              score: result.calculate_score
-          })
-      }
-      
-      const { data, error } = await op.select().single()
-      
       return { data, error }
   },
 }
