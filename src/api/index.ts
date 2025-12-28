@@ -33,7 +33,7 @@ export const updateJob = supabaseService.updateJob
 
 // User
 export const getMyResume = supabaseService.getMyResume
-export const updateMyResume = supabaseService.updateMyResume
+export const updateMyResume = supabaseService.saveMyResume
 export const uploadAvatar = supabaseService.uploadAvatar
 
 // LLM

@@ -347,7 +347,7 @@ const startEditing = () => {
     // We should probably update the DTO or the raw data access.
     // For now, let's match names to IDs from meta.
     const skillIds = r.skills?.map((name: string) => {
-        const s = meta.value.skills.find(ms => ms.name === name)
+        const s = meta.value.skills.find((ms: any) => ms.name === name)
         return s ? s.id : null
     }).filter(Boolean) || []
 
@@ -355,9 +355,9 @@ const startEditing = () => {
         id: r.id,
         candidate_name: r.candidate_name || r.name,
         gender: r.gender || 'M',
-        expected_city_id: meta.value.cities.find(c => c.name === r.expected_city)?.id,
+        expected_city_id: meta.value.cities.find((c: any) => c.name === r.expected_city)?.id,
         years_of_experience: r.years_of_experience || r.years,
-        current_level_id: meta.value.levels.find(l => l.name === r.current_level)?.id,
+        current_level_id: meta.value.levels.find((l: any) => l.name === r.current_level)?.id,
         expected_salary_min: r.salary_min,
         expected_salary_max: r.salary_max,
         avatar_url: r.avatar_url,

@@ -38,7 +38,7 @@ export const transformResume = (resume: any): ResumeDTO => {
     salary_max: resume.expected_salary_max,
     skills: resume.resume_skills?.map((rs: any) => rs.skills?.name).filter(Boolean) || [],
     degree: resume.educations?.[0]?.degrees?.name || 'Unknown',
-    avatar_url: resume.avatar_url || null,
+    avatar_url: null, // Will be populated by caller if needed
     educations: resume.educations?.map((edu: any) => ({
       ...edu,
       degree: edu.degrees,
@@ -477,7 +477,18 @@ export const supabaseService = {
       .single()
 
     if (error) return { data: null, error }
-    return { data: transformResume(data), error: null }
+    
+    const dto = transformResume(data)
+    
+    if (data.avatar_id) {
+        const { data: fileObj } = await supabase.schema('storage').from('objects').select('name').eq('id', data.avatar_id).single()
+        if (fileObj) {
+            const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileObj.name)
+            dto.avatar_url = publicUrl
+        }
+    }
+    
+    return { data: dto, error: null }
   },
 
   // User: Get My Resume
@@ -496,7 +507,18 @@ export const supabaseService = {
        .single()
        
      if (error) return { data: null, error }
-     return { data: transformResume(data), error: null }
+     
+     const dto = transformResume(data)
+     
+     if (data.avatar_id) {
+         const { data: fileObj } = await supabase.schema('storage').from('objects').select('name').eq('id', data.avatar_id).single()
+         if (fileObj) {
+             const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileObj.name)
+             dto.avatar_url = publicUrl
+         }
+     }
+     
+     return { data: dto, error: null }
   },
 
   // User: Update My Resume (Full Save)
@@ -511,8 +533,7 @@ export const supabaseService = {
           current_level_id: resumeData.current_level_id,
           expected_title: resumeData.expected_title,
           expected_salary_min: resumeData.expected_salary_min,
-          expected_salary_max: resumeData.expected_salary_max,
-          avatar_url: resumeData.avatar_url
+          expected_salary_max: resumeData.expected_salary_max
       }
 
       // Check if exists to determine ID
@@ -604,12 +625,9 @@ export const supabaseService = {
         
       const avatarId = listData?.[0]?.id || null
 
-      // 3. Update profile (profiles table)
-      // Note: profiles table is created via trigger on auth.users, so it should exist.
+      // 3. Update resumes table
       if (avatarId) {
-          await supabase.from('profiles').update({ avatar_id: avatarId }).eq('id', userId)
-          // Also update resumes if exists
-          await supabase.from('resumes').update({ avatar_url: publicUrl }).eq('user_id', userId)
+          await supabase.from('resumes').update({ avatar_id: avatarId }).eq('user_id', userId)
       }
       
       return { url: publicUrl, error: null }
@@ -752,17 +770,17 @@ export const supabaseService = {
   },
 
   // --- DIMENSIONS (Admin) ---
-  async createDimension(table: 'industries' | 'skills' | 'cities', name: string): Promise<{ data: any, error: any }> {
+  async createDimension(table: string, name: string): Promise<{ data: any, error: any }> {
       const { data, error } = await supabase.from(table).insert([{ name }]).select().single()
       return { data, error }
   },
   
-  async updateDimension(table: 'industries' | 'skills' | 'cities', id: number, name: string): Promise<{ data: any, error: any }> {
+  async updateDimension(table: string, id: number, name: string): Promise<{ data: any, error: any }> {
       const { data, error } = await supabase.from(table).update({ name }).eq('id', id).select().single()
       return { data, error }
   },
   
-  async deleteDimension(table: 'industries' | 'skills' | 'cities', id: number): Promise<{ error: any }> {
+  async deleteDimension(table: string, id: number): Promise<{ error: any }> {
       const { error } = await supabase.from(table).delete().eq('id', id)
       return { error }
   },

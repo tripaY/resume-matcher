@@ -28,7 +28,6 @@ export interface Degree {
 export interface Profile {
   id: string // UUID matching auth.users
   role_id: string
-  avatar_id?: string | null // UUID referencing storage.objects
   created_at?: string
   updated_at?: string
 }
@@ -60,7 +59,7 @@ export interface Resume {
   expected_title: string | null
   expected_salary_min: number | null
   expected_salary_max: number | null
-  avatar_url?: string | null
+  avatar_id?: string | null
   created_at?: string
   updated_at?: string
 }

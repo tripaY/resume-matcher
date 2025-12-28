@@ -62,7 +62,7 @@ const loadData = async () => {
 const handleAdd = async () => {
     if (!newItemName.value.trim()) return
     
-    // @ts-ignore
+    // 
     const { data, error } = await supabaseService.createDimension(props.table, newItemName.value.trim())
     if (error) {
         ElMessage.error('添加失败')
@@ -97,7 +97,7 @@ const cancelEdit = () => {
 const handleUpdate = async (row: any) => {
     if (!editName.value.trim()) return
     
-    // @ts-ignore
+    // 
     const { error } = await supabaseService.updateDimension(props.table, row.id, editName.value.trim())
     if (error) {
         ElMessage.error('更新失败')

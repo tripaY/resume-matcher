@@ -197,12 +197,12 @@ const fetchJobDetailForEdit = async (id: number) => {
             min_years: job.min_years,
             salary_min: job.salary_min,
             salary_max: job.salary_max,
-            city_id: meta.value.cities.find(c => c.name === job.city)?.id,
-            industry_id: meta.value.industries.find(i => i.name === job.industry)?.id,
-            career_level_id: meta.value.levels.find(l => l.name === job.level)?.id,
-            degree_id: meta.value.degrees.find(d => d.name === job.degree_required)?.id,
-            required_skill_ids: job.required_skills.map((name: string) => meta.value.skills.find((s: any) => s.name === name)?.id).filter(Boolean) as number[],
-            nice_skill_ids: job.nice_to_have_skills.map((name: string) => meta.value.skills.find((s: any) => s.name === name)?.id).filter(Boolean) as number[]
+            city_id: meta.value.cities.find((c: any) => c.name === job.city)?.id,
+            industry_id: meta.value.industries.find((i: any) => i.name === job.industry)?.id,
+            career_level_id: meta.value.levels.find((l: any) => l.name === job.level)?.id,
+            degree_id: meta.value.degrees.find((d: any) => d.name === job.degree_required)?.id,
+            required_skill_ids: (job.required_skills || []).map((name: string) => meta.value.skills.find((s: any) => s.name === name)?.id).filter(Boolean) as number[],
+            nice_skill_ids: (job.nice_to_have_skills || []).map((name: string) => meta.value.skills.find((s: any) => s.name === name)?.id).filter(Boolean) as number[]
         }
         dialogVisible.value = true
     }

@@ -135,14 +135,12 @@ ON CONFLICT (id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     role_id VARCHAR(50) NOT NULL DEFAULT 'candidate' REFERENCES public.roles(id),
-    avatar_id UUID REFERENCES storage.objects(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 COMMENT ON TABLE public.profiles IS '用户个人资料表，扩展 auth.users 信息';
 COMMENT ON COLUMN public.profiles.id IS '用户ID，关联 auth.users';
 COMMENT ON COLUMN public.profiles.role_id IS '用户角色ID';
-COMMENT ON COLUMN public.profiles.avatar_id IS '用户头像ID，关联 storage.objects';
 
 -- 3.3 管理员检查函数 (核心权限逻辑)
 -- 必须在 profiles 表存在后定义
@@ -268,7 +266,7 @@ CREATE TABLE IF NOT EXISTS public.resumes (
     expected_title VARCHAR(100),
     expected_salary_min INTEGER,
     expected_salary_max INTEGER,
-    avatar_url TEXT,
+    avatar_id UUID REFERENCES storage.objects(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -277,6 +275,7 @@ COMMENT ON COLUMN public.resumes.user_id IS '所属用户ID';
 COMMENT ON COLUMN public.resumes.years_of_experience IS '工作年限';
 COMMENT ON COLUMN public.resumes.expected_salary_min IS '期望薪资下限';
 COMMENT ON COLUMN public.resumes.expected_salary_max IS '期望薪资上限';
+COMMENT ON COLUMN public.resumes.avatar_id IS '用户头像ID，关联 storage.objects';
 
 -- 应用 Owner RLS
 SELECT enable_owner_rls('resumes');
@@ -403,12 +402,12 @@ CREATE INDEX IF NOT EXISTS idx_match_evaluations_job_id ON public.match_evaluati
 
 -- Profiles
 CREATE INDEX IF NOT EXISTS idx_profiles_role_id ON public.profiles(role_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_avatar_id ON public.profiles(avatar_id);
 
 -- Resumes
 CREATE INDEX IF NOT EXISTS idx_resumes_user_id ON public.resumes(user_id);
 CREATE INDEX IF NOT EXISTS idx_resumes_expected_city_id ON public.resumes(expected_city_id);
 CREATE INDEX IF NOT EXISTS idx_resumes_current_level_id ON public.resumes(current_level_id);
+CREATE INDEX IF NOT EXISTS idx_resumes_avatar_id ON public.resumes(avatar_id);
 
 -- Jobs
 CREATE INDEX IF NOT EXISTS idx_jobs_user_id ON public.jobs(user_id);
