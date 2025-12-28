@@ -1,5 +1,5 @@
 import { supabase } from '../utils/supabaseClient'
-import type { JobDTO, ResumeDTO, MetaData } from '../types/supabase'
+import type { JobDTO, ResumeDTO } from '../types/supabase'
 import type { User } from '@supabase/supabase-js'
 
 // Helper to transform Job DB response to Frontend DTO
@@ -121,7 +121,7 @@ export const supabaseService = {
     try {
       const [cities, levels, skills, industries, degrees] = await Promise.all([
         supabase.from('cities').select('id, name'),
-        supabase.from('career_levels').select('id, name, label, level'),
+        supabase.from('career_levels').select('id, name, level'),
         supabase.from('skills').select('id, name'),
         supabase.from('industries').select('id, name'),
         supabase.from('degrees').select('id, name, level')
@@ -239,7 +239,7 @@ export const supabaseService = {
 
   // Admin: Create Job
   async createJob(jobData: any): Promise<{ data: any, error: any }> {
-      const { skill_ids, ...jobFields } = jobData
+      const { required_skill_ids, nice_skill_ids, ...jobFields } = jobData
       
       const { data, error } = await supabase
         .from('jobs')
@@ -249,13 +249,32 @@ export const supabaseService = {
         
       if (error) return { data: null, error }
       
-      if (skill_ids && skill_ids.length > 0) {
-          const skills = skill_ids.map((sid: number) => ({
+      // Combine skills to insert
+      let skillsToInsert: any[] = []
+
+      // Explicit required skills
+      if (required_skill_ids && required_skill_ids.length > 0) {
+           skillsToInsert = [...skillsToInsert, ...required_skill_ids.map((sid: number) => ({
               job_id: data.id,
               skill_id: sid,
               is_required: true
-          }))
-          await supabase.from('job_skills').insert(skills)
+          }))]
+      }
+
+      // Explicit nice-to-have skills
+      if (nice_skill_ids && nice_skill_ids.length > 0) {
+           skillsToInsert = [...skillsToInsert, ...nice_skill_ids.map((sid: number) => ({
+              job_id: data.id,
+              skill_id: sid,
+              is_required: false
+          }))]
+      }
+      
+      if (skillsToInsert.length > 0) {
+          // Deduplicate based on skill_id?
+          // For now assuming caller handles overlap or DB constraint (PK is job_id, skill_id)
+          // We should probably filter duplicates if mixed usage
+          await supabase.from('job_skills').upsert(skillsToInsert)
       }
       
       return { data, error: null }
@@ -263,7 +282,7 @@ export const supabaseService = {
 
   // Admin: Update Job
   async updateJob(id: number, jobData: any): Promise<{ data: any, error: any }> {
-      const { skill_ids, ...jobFields } = jobData
+      const { required_skill_ids, nice_skill_ids, ...jobFields } = jobData
       
       const { data, error } = await supabase
         .from('jobs')
@@ -274,15 +293,29 @@ export const supabaseService = {
         
       if (error) return { data: null, error }
       
-      if (skill_ids) {
+      if (required_skill_ids || nice_skill_ids) {
           await supabase.from('job_skills').delete().eq('job_id', id)
-          if (skill_ids.length > 0) {
-              const skills = skill_ids.map((sid: number) => ({
+          
+          let skillsToInsert: any[] = []
+
+          if (required_skill_ids && required_skill_ids.length > 0) {
+               skillsToInsert = [...skillsToInsert, ...required_skill_ids.map((sid: number) => ({
                   job_id: id,
                   skill_id: sid,
                   is_required: true
-              }))
-              await supabase.from('job_skills').insert(skills)
+              }))]
+          }
+
+          if (nice_skill_ids && nice_skill_ids.length > 0) {
+               skillsToInsert = [...skillsToInsert, ...nice_skill_ids.map((sid: number) => ({
+                  job_id: id,
+                  skill_id: sid,
+                  is_required: false
+              }))]
+          }
+
+          if (skillsToInsert.length > 0) {
+              await supabase.from('job_skills').insert(skillsToInsert)
           }
       }
       
@@ -735,7 +768,7 @@ export const supabaseService = {
   },
 
   // --- MATCH CALCULATION ---
-  async runMatch(resumeId: number, jobId: number): Promise<{ data: any, error: any }> {
+  async evaluateMatch(resumeId: number, jobId: number): Promise<{ data: any, error: any }> {
       // Call RPC
       const { data: scoreData, error: rpcError } = await supabase.rpc('calculate_match_score', {
           p_resume_id: resumeId,
@@ -754,10 +787,9 @@ export const supabaseService = {
           job_id: jobId,
           calculate_score: result.calculate_score,
           calculate_reason: result.calculate_reason,
-          score: result.calculate_score, // Initially set total score to calculate score
-          is_valid: true
+          score: result.calculate_score // Initially set total score to calculate score
       }, { onConflict: 'resume_id,job_id' }).select().single()
       
       return { data, error }
-  }
+  },
 }

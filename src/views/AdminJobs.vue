@@ -85,8 +85,13 @@
                 <el-input-number v-model="form.salary_min" :step="1000" placeholder="Min" /> - 
                 <el-input-number v-model="form.salary_max" :step="1000" placeholder="Max" />
             </el-form-item>
-            <el-form-item label="技能要求">
-                <el-select v-model="form.skill_ids" multiple filterable placeholder="选择技能">
+            <el-form-item label="必修技能">
+                <el-select v-model="form.required_skill_ids" multiple filterable placeholder="选择必修技能">
+                    <el-option v-for="s in meta.skills" :key="s.id" :label="s.name" :value="s.id" />
+                </el-select>
+            </el-form-item>
+            <el-form-item label="加分技能">
+                <el-select v-model="form.nice_skill_ids" multiple filterable placeholder="选择加分技能(非必须)">
                     <el-option v-for="s in meta.skills" :key="s.id" :label="s.name" :value="s.id" />
                 </el-select>
             </el-form-item>
@@ -166,7 +171,8 @@ const openDialog = (mode: 'create' | 'edit', row?: any) => {
             min_years: 0,
             salary_min: 0,
             salary_max: 0,
-            skill_ids: []
+            required_skill_ids: [],
+            nice_skill_ids: []
         }
         dialogVisible.value = true
     }
@@ -195,7 +201,8 @@ const fetchJobDetailForEdit = async (id: number) => {
             industry_id: meta.value.industries.find(i => i.name === job.industry)?.id,
             career_level_id: meta.value.levels.find(l => l.name === job.level)?.id,
             degree_id: meta.value.degrees.find(d => d.name === job.degree_required)?.id,
-            skill_ids: job.required_skills.map(name => meta.value.skills.find(s => s.name === name)?.id).filter(Boolean)
+            required_skill_ids: job.required_skills.map((name: string) => meta.value.skills.find((s: any) => s.name === name)?.id).filter(Boolean) as number[],
+            nice_skill_ids: job.nice_to_have_skills.map((name: string) => meta.value.skills.find((s: any) => s.name === name)?.id).filter(Boolean) as number[]
         }
         dialogVisible.value = true
     }
@@ -214,7 +221,9 @@ const handleSave = async () => {
             min_years: form.value.min_years,
             salary_min: form.value.salary_min,
             salary_max: form.value.salary_max,
-            description: form.value.description
+            description: form.value.description,
+            required_skill_ids: form.value.required_skill_ids,
+            nice_skill_ids: form.value.nice_skill_ids
         }
         
         let res
@@ -225,20 +234,6 @@ const handleSave = async () => {
         }
         
         if (res.error) throw res.error
-        
-        // Handle skills (Separate relation table)
-        // Job Skills are in `job_skills` table
-        // This logic is missing in createJob/updateJob in service!
-        // We should move this logic to service or do it here.
-        // For simplicity, let's assume service handles it? 
-        // No, current service createJob just inserts into 'jobs'.
-        // We need to handle job_skills here or update service.
-        // Let's update service later? Or do it here.
-        // Doing it here requires raw supabase access.
-        // Better update service.createJob to handle skills.
-        
-        // For now, let's just close and refresh, assuming only basic info saved.
-        // TODO: Implement job_skills saving.
         
         ElMessage.success('保存成功')
         dialogVisible.value = false

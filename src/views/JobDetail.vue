@@ -186,7 +186,7 @@ const runMatching = async () => {
         // 2. Run match
         let successCount = 0
         for (const resume of resumes) {
-            const { error } = await supabaseService.runMatch(resume.id, jobId)
+            const { error } = await supabaseService.evaluateMatch(resume.id, jobId)
             if (!error) successCount++
         }
         ElMessage.success(`匹配计算完成，成功匹配 ${successCount} 份简历`)

@@ -161,6 +161,7 @@ Deno.serve(async (req: Request) => {
     
     const llmData = await llmRes.json()
     let content = llmData.choices[0].message.content
+    console.log('DEBUG: LLM Raw Content:', content)
 
     // Cleanup JSON
     if (content.includes('```json')) {
@@ -180,17 +181,57 @@ Deno.serve(async (req: Request) => {
 
     // 6. Insert Data
     const results = []
+
+    // Helper to get or insert dimension
+    const getOrInsert = async (map: Map<any, any>, table: string, name: string) => {
+        if (!name) return null
+        if (map.has(name)) return map.get(name)
+
+        // Insert new dimension
+        const { data, error } = await supabase
+            .from(table)
+            .insert([{ name }])
+            .select('id')
+            .single()
+
+        if (data) {
+            console.log(`Created new ${table}: ${name}`)
+            map.set(name, data.id)
+            return data.id
+        }
+
+        if (error) {
+            // Check for unique constraint violation or race condition
+            const { data: existing } = await supabase
+                .from(table)
+                .select('id')
+                .eq('name', name)
+                .single()
+                
+            if (existing) {
+                map.set(name, existing.id)
+                return existing.id
+            }
+            console.error(`Failed to create/find ${table} '${name}':`, error)
+        }
+        return null
+    }
     
     for (const item of items) {
         if (type === 'job') {
+            const industryId = await getOrInsert(industryMap, 'industries', item.industry)
+            const cityId = await getOrInsert(cityMap, 'cities', item.city)
+            const levelId = await getOrInsert(levelMap, 'career_levels', item.level)
+            const degreeId = await getOrInsert(degreeMap, 'degrees', item.degree_required)
+
             const jobData = {
                 user_id: userId,
                 title: item.title,
-                city_id: cityMap.get(item.city) || null,
+                city_id: cityId,
                 min_years: item.min_years,
-                level_id: levelMap.get(item.level) || null,
-                degree_required_id: degreeMap.get(item.degree_required) || null,
-                industry_id: industryMap.get(item.industry) || null,
+                level_id: levelId,
+                degree_required_id: degreeId,
+                industry_id: industryId,
                 salary_min: item.salary_min,
                 salary_max: item.salary_max
             }
@@ -201,13 +242,17 @@ Deno.serve(async (req: Request) => {
             
             // Insert Skills
             if (item.skills && Array.isArray(item.skills)) {
-                const skillInserts = item.skills
-                    .map((s: any) => ({
-                        id: skillMap.get(s.name),
-                        is_required: s.is_required
-                    }))
-                    .filter((s: any) => s.id)
-                    .map((s: any) => ({ job_id: job.id, skill_id: s.id, is_required: s.is_required }))
+                const skillInserts = []
+                for (const s of item.skills) {
+                    const skillId = await getOrInsert(skillMap, 'skills', s.name)
+                    if (skillId) {
+                        skillInserts.push({ 
+                            job_id: job.id, 
+                            skill_id: skillId, 
+                            is_required: s.is_required 
+                        })
+                    }
+                }
                 
                 if (skillInserts.length > 0) {
                     await supabase.from('job_skills').insert(skillInserts)
@@ -216,13 +261,16 @@ Deno.serve(async (req: Request) => {
             results.push(job)
 
         } else if (type === 'resume') {
+            const cityId = await getOrInsert(cityMap, 'cities', item.expected_city)
+            const levelId = await getOrInsert(levelMap, 'career_levels', item.current_level)
+
              const resumeData = {
                 user_id: userId,
                 candidate_name: item.candidate_name,
                 gender: item.gender,
-                expected_city_id: cityMap.get(item.expected_city) || null,
+                expected_city_id: cityId,
                 years_of_experience: item.years_of_experience,
-                current_level_id: levelMap.get(item.current_level) || null,
+                current_level_id: levelId,
                 expected_title: item.expected_title,
                 expected_salary_min: item.expected_salary_min,
                 expected_salary_max: item.expected_salary_max
@@ -233,10 +281,13 @@ Deno.serve(async (req: Request) => {
 
             // Insert Skills
             if (item.skills && Array.isArray(item.skills)) {
-                const skillInserts = item.skills
-                    .map((name: string) => skillMap.get(name))
-                    .filter((id: number) => id)
-                    .map((skill_id: number) => ({ resume_id: resume.id, skill_id }))
+                const skillInserts = []
+                for (const name of item.skills) {
+                    const skillId = await getOrInsert(skillMap, 'skills', name)
+                    if (skillId) {
+                        skillInserts.push({ resume_id: resume.id, skill_id: skillId })
+                    }
+                }
                  
                  if (skillInserts.length > 0) {
                      await supabase.from('resume_skills').insert(skillInserts)
@@ -245,17 +296,20 @@ Deno.serve(async (req: Request) => {
             
             // Insert Educations
              if (item.educations && Array.isArray(item.educations)) {
-                 const eduInserts = item.educations.map((edu: any) => {
-                     const degreeId = degreeMap.get(edu.degree)
-                     const industryId = industryMap.get(edu.major_industry)
-                     if (!degreeId) return null
-                     return {
-                         resume_id: resume.id,
-                         degree_id: degreeId,
-                         major_industry_id: industryId || null,
-                         school: edu.school
+                 const eduInserts = []
+                 for (const edu of item.educations) {
+                     const degreeId = await getOrInsert(degreeMap, 'degrees', edu.degree)
+                     const industryId = await getOrInsert(industryMap, 'industries', edu.major_industry)
+                     
+                     if (degreeId) {
+                         eduInserts.push({
+                             resume_id: resume.id,
+                             degree_id: degreeId,
+                             major_industry_id: industryId,
+                             school: edu.school
+                         })
                      }
-                 }).filter(Boolean)
+                 }
 
                  if (eduInserts.length > 0) {
                      await supabase.from('educations').insert(eduInserts)
@@ -264,12 +318,16 @@ Deno.serve(async (req: Request) => {
 
             // Insert Experiences
              if (item.experiences && Array.isArray(item.experiences)) {
-                 const expInserts = item.experiences.map((exp: any) => ({
-                     resume_id: resume.id,
-                     company_name: exp.company_name,
-                     industry_id: industryMap.get(exp.industry) || null,
-                     description: exp.description
-                 }))
+                 const expInserts = []
+                 for (const exp of item.experiences) {
+                     const indId = await getOrInsert(industryMap, 'industries', exp.industry)
+                     expInserts.push({
+                         resume_id: resume.id,
+                         company_name: exp.company_name,
+                         industry_id: indId,
+                         description: exp.description
+                     })
+                 }
 
                  if (expInserts.length > 0) {
                      await supabase.from('experiences').insert(expInserts)

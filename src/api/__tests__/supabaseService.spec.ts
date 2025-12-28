@@ -5,7 +5,7 @@ import { supabaseService } from '../supabaseService'
 // Requires valid .env file with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
 describe('supabaseService Integration', () => {
   
-  it('should call call-llm function successfully', async () => {
+  it('callLLm', async () => {
     // Debug: Check if env vars are loaded
     // @ts-ignore
     const key = (typeof process !== 'undefined' ? process.env.VITE_SUPABASE_PUBLISHABLE_KEY : '') || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
@@ -38,7 +38,7 @@ describe('supabaseService Integration', () => {
 
   }, 30000) // Set 30s timeout for network request
 
-  it('should register and login a user successfully', async () => {
+  it('loginOrRegister', async () => {
     // Use a simple username
     const username = `admin`
     const password = 'admin123'
@@ -100,7 +100,7 @@ describe('supabaseService Integration', () => {
 
   }, 30000)
 
-  it('mockData', async () => {
+  it('mockJobData', async () => {
     // 1. Ensure logged in as admin
     const username = `admin`
     const password = 'admin123'
@@ -136,8 +136,26 @@ describe('supabaseService Integration', () => {
     expect(job).toHaveProperty('title')
     expect(job).toHaveProperty('salary_min')
 
-    // 3. Call generateMockData for Resumes
-    console.log('Generating Mock Resumes...')
+  }, 60000) // 60s timeout for LLM generation
+
+  it('mockResumeData', async () => {
+    // 1. Random User
+    const timestamp = Date.now()
+    const username = `user_${timestamp}`
+    const password = `pass_${timestamp}`
+    
+    console.log(`Logging in as random user ${username}...`)
+    const { user, error: loginError } = await supabaseService.loginOrRegister(username, password)
+    
+    if (loginError) {
+      console.error('Login failed, skipping mock data test:', loginError)
+      return
+    }
+    
+    expect(user).toBeDefined()
+
+    // 2. Call generateMockData for Resumes
+    console.log('Generating Mock Resumes for random user...')
     const { data: resumeData, error: resumeError } = await supabaseService.generateMockData('resume', 1)
 
     if (resumeError) {
@@ -156,5 +174,5 @@ describe('supabaseService Integration', () => {
     expect(resume).toHaveProperty('candidate_name')
     expect(resume).toHaveProperty('years_of_experience')
 
-  }, 60000) // 60s timeout for LLM generation
+  }, 60000)
 })

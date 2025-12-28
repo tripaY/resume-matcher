@@ -179,7 +179,7 @@ SELECT enable_storage_rls('avatars');
 -- =============================================================================
 
 -- 定义表
-CREATE TABLE IF NOT EXISTS public.cities (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE, code VARCHAR(50));
+CREATE TABLE IF NOT EXISTS public.cities (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE);
 COMMENT ON TABLE public.cities IS '城市维度表';
 
 CREATE TABLE IF NOT EXISTS public.career_levels (id SERIAL PRIMARY KEY, name VARCHAR(50) NOT NULL UNIQUE, level INTEGER);
@@ -529,21 +529,44 @@ BEGIN
 
     -- 3. Calculate Scores
     
-    -- A. Skills (30%)
+    -- A. Skills (30%) -> Split into Required (20%) + Nice-to-have (10%)
     v_total_req := array_length(v_j_req_skill_ids, 1);
     IF v_total_req IS NULL THEN v_total_req := 0; END IF;
     
+    -- A1. Required Skills (20%)
     IF v_total_req > 0 THEN
         -- Count matching required skills
         SELECT COUNT(*) INTO v_match_req
         FROM unnest(v_j_req_skill_ids) s
         WHERE s = ANY(v_r_skill_ids);
         
-        s_skills := (v_match_req::NUMERIC / v_total_req::NUMERIC) * 30;
-        v_details := v_details || format('技能匹配: 必修技能匹配 %s/%s (+%s分)', v_match_req, v_total_req, round(s_skills, 1)) || E'\n';
+        s_skills := (v_match_req::NUMERIC / v_total_req::NUMERIC) * 20;
+        v_details := v_details || format('技能匹配(必修): %s/%s (+%s分)', v_match_req, v_total_req, round(s_skills, 1)) || E'\n';
     ELSE
-        s_skills := 30; -- No skills required? Full points
-        v_details := v_details || '技能匹配: 无必修技能要求 (+30分)' || E'\n';
+        s_skills := 20; -- No required skills? Full points for this part
+        v_details := v_details || '技能匹配(必修): 无要求 (+20分)' || E'\n';
+    END IF;
+
+    -- A2. Nice-to-have Skills (10%)
+    v_total_req := array_length(v_j_nice_skill_ids, 1); -- Reuse variable for length
+    IF v_total_req IS NULL THEN v_total_req := 0; END IF;
+
+    IF v_total_req > 0 THEN
+        SELECT COUNT(*) INTO v_match_nice
+        FROM unnest(v_j_nice_skill_ids) s
+        WHERE s = ANY(v_r_skill_ids);
+        
+        -- Add to s_skills
+        s_skills := s_skills + ((v_match_nice::NUMERIC / v_total_req::NUMERIC) * 10);
+        v_details := v_details || format('技能匹配(加分): %s/%s (+%s分)', v_match_nice, v_total_req, round(((v_match_nice::NUMERIC / v_total_req::NUMERIC) * 10), 1)) || E'\n';
+    ELSE
+        -- No nice-to-have skills defined? 
+        -- Option A: Give full 10 points (lenient)
+        -- Option B: Give 0 points (strict) -> prefer strict for "bonus" but usually if not defined, we don't penalize.
+        -- However, for "nice to have", if none are listed, everyone gets them? Or no one gets them?
+        -- Let's give full points to maintain 100 total score possibility for all jobs.
+        s_skills := s_skills + 10;
+        v_details := v_details || '技能匹配(加分): 无加分项 (+10分)' || E'\n';
     END IF;
 
     -- B. Experience Years (20%)

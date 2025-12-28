@@ -2,6 +2,9 @@
 
 这是一个基于 Vue 3 和 Supabase 开发的招聘匹配系统。
 
+## Supabase 数据库设计
+见 [sql表](./supabase/supabase_setup.sql)
+
 ## 技术选型
 
 了解到 Supabase 的功能后，做了如下改动

@@ -62,7 +62,8 @@ const loadData = async () => {
 const handleAdd = async () => {
     if (!newItemName.value.trim()) return
     
-    const { data, error } = await supabaseService.updateDimension(props.table, 'add', { name: newItemName.value.trim() })
+    // @ts-ignore
+    const { data, error } = await supabaseService.createDimension(props.table, newItemName.value.trim())
     if (error) {
         ElMessage.error('添加失败')
     } else {
@@ -73,7 +74,8 @@ const handleAdd = async () => {
 }
 
 const handleDelete = async (id: number) => {
-    const { error } = await supabaseService.updateDimension(props.table, 'delete', { id })
+    // @ts-ignore
+    const { error } = await supabaseService.deleteDimension(props.table, id)
     if (error) {
         ElMessage.error('删除失败')
     } else {
@@ -95,7 +97,8 @@ const cancelEdit = () => {
 const handleUpdate = async (row: any) => {
     if (!editName.value.trim()) return
     
-    const { error } = await supabaseService.updateDimension(props.table, 'update', { id: row.id, name: editName.value.trim() })
+    // @ts-ignore
+    const { error } = await supabaseService.updateDimension(props.table, row.id, editName.value.trim())
     if (error) {
         ElMessage.error('更新失败')
     } else {

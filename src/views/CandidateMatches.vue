@@ -114,13 +114,13 @@ const runMatching = async () => {
 
       // 1. Get all jobs
       // Ideally this should be done on backend, but we do it here for now as requested
-      const { data: jobsData } = await supabaseService.getJobs(1, 100, {}) // Limit to 100 for now
+      const { data: jobsData } = await supabaseService.getJobs({ page: 1, pageSize: 100 }) // Limit to 100 for now
       const jobs = jobsData.items
 
       // 2. Run match for each job
       let successCount = 0
       for (const job of jobs) {
-          const { error } = await supabaseService.runMatch(resume.id, job.id)
+          const { error } = await supabaseService.evaluateMatch(resume.id, job.id)
           if (!error) successCount++
       }
       
@@ -132,12 +132,6 @@ const runMatching = async () => {
   } finally {
       matching.value = false
   }
-}
-
-const getScoreStatus = (score: number) => {
-    if (score >= 80) return 'success'
-    if (score >= 60) return 'warning'
-    return 'exception'
 }
 
 onMounted(() => {
