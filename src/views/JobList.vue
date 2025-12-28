@@ -62,7 +62,7 @@
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="scope">
           <el-button type="primary" size="small" @click="viewDetail(scope.row.id)">
-            详情 & 匹配
+            查看详情
           </el-button>
         </template>
       </el-table-column>
@@ -71,9 +71,11 @@
     <div class="pagination">
       <el-pagination
         v-model:current-page="currentPage"
-        :page-size="pageSize"
+        v-model:page-size="pageSize"
+        :page-sizes="[5, 10, 20]"
         :total="total"
-        layout="total, prev, pager, next"
+        layout="total, sizes, prev, pager, next, jumper"
+        @size-change="handleSizeChange"
         @current-change="handlePageChange"
       />
     </div>
@@ -156,6 +158,12 @@ const handlePageChange = (val: number) => {
     fetchData()
 }
 
+const handleSizeChange = (val: number) => {
+    pageSize.value = val
+    currentPage.value = 1
+    fetchData()
+}
+
 const viewDetail = (id: number) => {
     router.push(`/jobs/${id}`)
 }
@@ -184,5 +192,11 @@ onMounted(() => {
     margin-top: 20px;
     display: flex;
     justify-content: flex-end;
+}
+.el-select {
+    width: 160px;
+}
+.el-input-number {
+    width: 160px;
 }
 </style>

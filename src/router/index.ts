@@ -5,16 +5,38 @@ const routes = [
   {
     path: '/login',
     component: () => import('../views/Login.vue'),
-    meta: { title: '登录' }
+    meta: { title: '登录', hideLayout: true }
   },
   {
     path: '/',
-    redirect: '/dashboard' // Changed from /resumes to a dashboard or role-based logic
+    redirect: () => {
+      // Logic handled in beforeEach, but here we need a placeholder
+      // that does NOT match the beforeEach 'to.path === /' condition immediately
+      // OR we just rely on beforeEach to intercept.
+      // However, Vue Router redirect happens BEFORE navigation guards.
+      // So if we redirect to /my-resume here, the guard sees /my-resume.
+      
+      // We should return a route that triggers the guard logic correctly.
+      // But we can't easily access async user state here synchronously.
+      
+      // Strategy: Let it go to a loading/splash component, OR
+      // Just redirect to something safe, and let the guard redirect AGAIN if needed.
+      // BUT, if we redirect to /my-resume, the guard for /my-resume just checks auth.
+      
+      // BETTER FIX: Don't use redirect: in route config for root.
+      // Use a component for root that does the logic, OR rely on the guard.
+      // If we remove redirect here, the guard will catch path: '/'
+      return '/dashboard-redirect' 
+    }
   },
   {
-    path: '/dashboard',
-    component: () => import('../views/Dashboard.vue'),
-    meta: { requiresAuth: true, title: '工作台' }
+      path: '/dashboard-redirect',
+      component: { template: '<div>Loading...</div>' } // Dummy component
+  },
+  {
+    path: '/admin/dashboard',
+    component: () => import('../views/AdminDashboard.vue'),
+    meta: { requiresAuth: true, title: '仪表盘' }
   },
   {
     path: '/admin/jobs',
@@ -55,11 +77,6 @@ const routes = [
     path: '/candidate/matches',
     component: () => import('../views/CandidateMatches.vue'),
     meta: { requiresAuth: true, title: '职位匹配' }
-  },
-  {
-    path: '/debug/llm',
-    component: () => import('../views/TestLLM.vue'),
-    meta: { title: 'LLM Debugger' }
   }
 ]
 
@@ -77,14 +94,23 @@ router.beforeEach(async (to, _from, next) => {
     next('/login')
   } else if (to.path === '/login' && user) {
     next('/')
+  } else if ((to.path === '/' || to.path === '/dashboard-redirect') && user) {
+     // Handle root redirect based on role
+     const { data: profile } = await supabaseService.getUserProfile(user.id)
+     const role = user.user_metadata?.role || (profile ? (profile.role || profile.role_id) : 'user')
+     if (role === 'admin') {
+         next('/admin/dashboard')
+     } else {
+         next('/my-resume')
+     }
   } else if (to.path.startsWith('/admin') && user) {
     // Check role
     const { data: profile } = await supabaseService.getUserProfile(user.id)
     // Also check metadata as fallback or primary if we set it there
-    const role = user.user_metadata?.role || (profile ? profile.role : 'user')
+    const role = user.user_metadata?.role || (profile ? (profile.role || profile.role_id) : 'user')
     
     if (role !== 'admin') {
-       next('/dashboard')
+       next('/my-resume')
     } else {
        next()
     }

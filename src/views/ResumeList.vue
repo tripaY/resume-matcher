@@ -175,4 +175,10 @@ onMounted(() => {
     display: flex;
     justify-content: flex-end;
 }
+.el-select {
+    width: 160px;
+}
+.el-input-number {
+    width: 160px;
+}
 </style>

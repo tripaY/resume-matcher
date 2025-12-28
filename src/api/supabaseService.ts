@@ -8,15 +8,21 @@ export const transformJob = (job: any): JobDTO => {
     id: job.id,
     title: job.title,
     city: job.cities?.name || 'Unknown',
+    city_id: job.city_id,
     min_years: job.min_years,
     level: job.career_levels?.name || 'Unknown',
+    level_id: job.level_id,
     salary_min: job.salary_min,
     salary_max: job.salary_max,
     degree: job.degrees?.name || 'Unknown',
     degree_required: job.degrees?.name || 'Unknown',
+    degree_required_id: job.degree_required_id,
     industry: job.industries?.name || 'Unknown',
+    industry_id: job.industry_id,
     required_skills: job.job_skills?.filter((js: any) => js.is_required).map((js: any) => js.skills?.name).filter(Boolean) || [],
+    required_skill_ids: job.job_skills?.filter((js: any) => js.is_required).map((js: any) => js.skill_id).filter(Boolean) || [],
     nice_to_have_skills: job.job_skills?.filter((js: any) => !js.is_required).map((js: any) => js.skills?.name).filter(Boolean) || [],
+    nice_skill_ids: job.job_skills?.filter((js: any) => !js.is_required).map((js: any) => js.skill_id).filter(Boolean) || [],
     description: job.description || '职位描述暂未从数据库读取...' 
   }
 }
@@ -34,6 +40,7 @@ export const transformResume = (resume: any): ResumeDTO => {
     years_of_experience: resume.years_of_experience,
     level: resume.career_levels?.name || 'Unknown',
     current_level: resume.career_levels?.name || 'Unknown',
+    expected_title: resume.expected_title,
     salary_min: resume.expected_salary_min,
     salary_max: resume.expected_salary_max,
     skills: resume.resume_skills?.map((rs: any) => rs.skills?.name).filter(Boolean) || [],
@@ -108,7 +115,7 @@ export const supabaseService = {
   // Get User Profile (Role)
   async getUserProfile(userId: string): Promise<{ data: any, error: any }> {
     const { data, error } = await supabase
-      .from('users')
+      .from('profiles')
       .select('*')
       .eq('id', userId)
       .single()
@@ -160,23 +167,26 @@ export const supabaseService = {
     `
     
     // Dynamic Join Type for Filtering
-    if (params.skill) {
-        selectStr = selectStr.replace('job_skills!left', 'job_skills!inner')
-    }
+    // When filtering by a related table's column, we must use !inner join
+    // otherwise PostgREST filters the related object (returning null if no match) 
+    // but still returns the parent row.
+    if (params.skill) selectStr = selectStr.replace('job_skills!left', 'job_skills!inner')
+    if (params.city) selectStr = selectStr.replace('cities(name)', 'cities!inner(name)')
+    if (params.level) selectStr = selectStr.replace('career_levels(name)', 'career_levels!inner(name)')
+    if (params.industry) selectStr = selectStr.replace('industries(name)', 'industries!inner(name)')
+    if (params.degree) selectStr = selectStr.replace('degrees(name)', 'degrees!inner(name)')
     
     let query = supabase.from('jobs').select(selectStr, { count: 'exact' })
 
-    // Apply filters
-    if (params.city) query = query.not('cities', 'is', null).filter('cities.name', 'eq', params.city)
-    if (params.level) query = query.not('career_levels', 'is', null).filter('career_levels.name', 'eq', params.level)
-    if (params.industry) query = query.not('industries', 'is', null).filter('industries.name', 'eq', params.industry)
-    if (params.degree) query = query.not('degrees', 'is', null).filter('degrees.name', 'eq', params.degree)
+    // Apply filters - only if values are present and not empty strings
+    // Note: We use .eq() on the related column. Combined with !inner join above, this filters the jobs.
+    if (params.city) query = query.filter('cities.name', 'eq', params.city)
+    if (params.level) query = query.filter('career_levels.name', 'eq', params.level)
+    if (params.industry) query = query.filter('industries.name', 'eq', params.industry)
+    if (params.degree) query = query.filter('degrees.name', 'eq', params.degree)
     
-    if (params.min_years !== undefined) {
-        // Filter jobs that require at least X years?
-        // Or jobs that require exactly X? 
-        // Usually filters are "Jobs requiring <= X years" (for candidates) or "Jobs requiring >= X" (for finding senior roles).
-        // Let's assume >= for "Minimum Years Requirement" filter.
+    // Explicitly check for non-null/undefined for numeric values, allowing 0
+    if (params.min_years !== undefined && params.min_years !== null && params.min_years !== '') {
         query = query.gte('min_years', params.min_years)
     }
     
@@ -335,55 +345,6 @@ export const supabaseService = {
   // --- RESUMES ---
   // Get Resumes List
   async getResumes(params: any = {}): Promise<{ data: { items: ResumeDTO[], total: number }, error: any }> {
-    let query = supabase
-      .from('resumes')
-      .select(`
-        *,
-        cities(name),
-        career_levels(name),
-        resume_skills(skills(name)),
-        educations(degrees(name)),
-        experiences(industries(name))
-      `, { count: 'exact' })
-
-    // Basic Filters
-    if (params.city) query = query.not('cities', 'is', null).filter('cities.name', 'eq', params.city)
-    if (params.level) query = query.not('career_levels', 'is', null).filter('career_levels.name', 'eq', params.level)
-    if (params.min_years !== undefined) query = query.gte('years_of_experience', params.min_years)
-
-    // Complex Filters (Related Tables)
-    // Note: To filter by related table, we need !inner join behavior.
-    // However, Supabase JS client syntax for !inner is done in the select string usually, 
-    // or by applying filter on the related table path.
-    // If we use simple filter(), it filters the main table based on the related table condition if correctly structured.
-    // But standard PostgREST way for "filter parents where child exists with condition" is often doing !inner in select.
-    
-    // For simplicity in this codebase, we will use the !inner syntax in select if filter is present.
-    // But since we construct query dynamically, it's tricky to change select string.
-    // A common workaround is to use separate queries or modifiers.
-    
-    // Actually, we can use the modifier syntax on the join:
-    // .select('..., resume_skills!inner(skills!inner(name))')
-    // But since we want optional filtering, we might need to branch logic or assume broad selection.
-    
-    // Let's try applying filters directly. If Supabase client sees a filter on a related table, 
-    // it automatically does an inner join logic for that relation in terms of filtering rows.
-    
-    if (params.skill) {
-       // Filter resumes where ANY skill matches
-       // Syntax: resume_skills.skills.name.eq.params.skill
-       // We need to ensure the relationship is queryable.
-       // The standard way is using !inner in select, which we can't easily inject here without rebuilding select.
-       // Let's rebuild select if needed or just append filters.
-       
-       // Alternative: Use .not('resume_skills', 'is', null) combined with filter on inner.
-       // But JS client is tricky with deep filtering without !inner.
-       
-       // Let's try a different approach:
-       // We'll modify the initial select to include !inner if specific filters are active.
-       // This is cleaner.
-    }
-    
     // Re-constructing query to support optional !inner joins
     let selectStr = `
         *,
@@ -393,6 +354,10 @@ export const supabaseService = {
         educations!left(degrees(name)),
         experiences!left(industries(name))
     `
+    
+    // Dynamic Join Type for Filtering
+    if (params.city) selectStr = selectStr.replace('cities(name)', 'cities!inner(name)')
+    if (params.level) selectStr = selectStr.replace('career_levels(name)', 'career_levels!inner(name)')
     
     // If filtering by skill, use !inner for resume_skills
     if (params.skill) {
@@ -408,17 +373,18 @@ export const supabaseService = {
     }
 
     // Re-initialize query with dynamic select
-    query = supabase.from('resumes').select(selectStr, { count: 'exact' })
+    let query = supabase.from('resumes').select(selectStr, { count: 'exact' })
 
     // Apply Filters
-    if (params.city) query = query.not('cities', 'is', null).filter('cities.name', 'eq', params.city)
-    if (params.level) query = query.not('career_levels', 'is', null).filter('career_levels.name', 'eq', params.level)
-    if (params.min_years !== undefined) query = query.gte('years_of_experience', params.min_years)
+    if (params.city) query = query.filter('cities.name', 'eq', params.city)
+    if (params.level) query = query.filter('career_levels.name', 'eq', params.level)
+    
+    // Explicitly check for non-null/undefined for numeric values, allowing 0
+    if (params.min_years !== undefined && params.min_years !== null && params.min_years !== '') {
+        query = query.gte('years_of_experience', params.min_years)
+    }
     
     if (params.skill) {
-        // We need to filter the nested resource. 
-        // With !inner, we can filter on the joined table.
-        // resume_skills.skills.name
         query = query.filter('resume_skills.skills.name', 'eq', params.skill)
     }
     
@@ -427,8 +393,6 @@ export const supabaseService = {
     }
     
     if (params.industry) {
-        // Industry can be in experiences (usually) or educations (major_industry).
-        // Let's assume experience industry for now as it's more relevant for job matching.
         query = query.filter('experiences.industries.name', 'eq', params.industry)
     }
 
@@ -481,10 +445,15 @@ export const supabaseService = {
     const dto = transformResume(data)
     
     if (data.avatar_id) {
-        const { data: fileObj } = await supabase.schema('storage').from('objects').select('name').eq('id', data.avatar_id).single()
-        if (fileObj) {
-            const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileObj.name)
-            dto.avatar_url = publicUrl
+        dto.avatar_id = data.avatar_id
+        // Try to get file from storage list instead of querying objects table directly (permission safe)
+        const { data: files } = await supabase.storage.from('avatars').list()
+        if (files) {
+            const fileObj = files.find(f => f.id === data.avatar_id)
+            if (fileObj) {
+                const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileObj.name)
+                dto.avatar_url = publicUrl
+            }
         }
     }
     
@@ -511,10 +480,15 @@ export const supabaseService = {
      const dto = transformResume(data)
      
      if (data.avatar_id) {
-         const { data: fileObj } = await supabase.schema('storage').from('objects').select('name').eq('id', data.avatar_id).single()
-         if (fileObj) {
-             const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileObj.name)
-             dto.avatar_url = publicUrl
+         dto.avatar_id = data.avatar_id
+         // Try to get file from storage list instead of querying objects table directly
+         const { data: files } = await supabase.storage.from('avatars').list()
+         if (files) {
+             const fileObj = files.find(f => f.id === data.avatar_id)
+             if (fileObj) {
+                 const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileObj.name)
+                 dto.avatar_url = publicUrl
+             }
          }
      }
      
@@ -524,7 +498,7 @@ export const supabaseService = {
   // User: Update My Resume (Full Save)
   async saveMyResume(userId: string, resumeData: any): Promise<{ data: any, error: any }> {
       // 1. Upsert Resume Main Info
-      const mainInfo = {
+      const mainInfo: any = {
           user_id: userId,
           candidate_name: resumeData.candidate_name,
           gender: resumeData.gender,
@@ -534,6 +508,11 @@ export const supabaseService = {
           expected_title: resumeData.expected_title,
           expected_salary_min: resumeData.expected_salary_min,
           expected_salary_max: resumeData.expected_salary_max
+      }
+
+      // Add avatar_id if present
+      if (resumeData.avatar_id) {
+          mainInfo.avatar_id = resumeData.avatar_id
       }
 
       // Check if exists to determine ID
@@ -604,14 +583,14 @@ export const supabaseService = {
   },
 
   // User: Upload Avatar
-  async uploadAvatar(userId: string, file: File): Promise<{ url: string | null, error: any }> {
+  async uploadAvatar(userId: string, file: File): Promise<{ url: string | null, avatarId: string | null, error: any }> {
       const fileName = `avatar-${Date.now()}-${file.name}`
       // 1. Upload file
       const { error } = await supabase.storage
         .from('avatars')
         .upload(fileName, file)
 
-      if (error) return { url: null, error }
+      if (error) return { url: null, avatarId: null, error }
       
       const { data: { publicUrl } } = supabase.storage
         .from('avatars')
@@ -625,12 +604,12 @@ export const supabaseService = {
         
       const avatarId = listData?.[0]?.id || null
 
-      // 3. Update resumes table
-      if (avatarId) {
-          await supabase.from('resumes').update({ avatar_id: avatarId }).eq('user_id', userId)
-      }
+      // 3. Update resumes table - REMOVED to allow manual save
+      // if (avatarId) {
+      //    await supabase.from('resumes').update({ avatar_id: avatarId }).eq('user_id', userId)
+      // }
       
-      return { url: publicUrl, error: null }
+      return { url: publicUrl, avatarId, error: null }
   },
 
   // --- MATCHING ---

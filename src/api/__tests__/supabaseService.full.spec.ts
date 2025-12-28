@@ -131,13 +131,6 @@ describe('Supabase Service Full Integration Test', () => {
         it('Get My Resume (Empty)', async () => {
             if (!candidateUser) throw new Error('No candidate user')
             const { data, error } = await supabaseService.getMyResume(candidateUser.id)
-            // It might be null or error depending on implementation, usually null or empty object if single() fails? 
-            // supabaseService returns { data: null, error } if not found
-            // Actually single() returns error if no rows.
-            // But implementation:
-            // if (error) return { data: null, error }
-            // So we expect data to be null or error to be present.
-            // Wait, if 406 Not Acceptable (no rows), error is returned.
             if (data) {
                 console.log('Resume already exists (unexpected for new random user)')
             } else {
@@ -148,10 +141,6 @@ describe('Supabase Service Full Integration Test', () => {
         it('Save My Resume', async () => {
             if (!candidateUser) throw new Error('No candidate user')
             
-            // We need valid IDs for City, Level, etc. 
-            // We can fetch Meta again or just pass nulls if allowed?
-            // Schema likely requires IDs.
-            // Let's fetch Meta as this user (public access)
             const { data: meta } = await supabaseService.getMeta()
             const cityId = meta.cities[0]?.id
             const levelId = meta.levels[0]?.id
@@ -180,6 +169,41 @@ describe('Supabase Service Full Integration Test', () => {
             expect(data).toBeDefined()
             createdResumeId = data.id
             console.log('Created Resume:', createdResumeId)
+        })
+
+        it('Upload Avatar', async () => {
+            if (!candidateUser) throw new Error('No candidate user')
+            
+            // Mock File object for Node environment
+            const mockFile = {
+                name: 'avatar.png',
+                type: 'image/png',
+                arrayBuffer: async () => new ArrayBuffer(8),
+                stream: () => {},
+                slice: () => {},
+                size: 8
+            }
+            
+            // We need to cast to any or File because we are in Node
+            const { url, error } = await supabaseService.uploadAvatar(candidateUser.id, mockFile as any)
+            
+            if (error) {
+                console.warn('Avatar Upload Error (Storage might not be configured locally):', error)
+            } else {
+                expect(url).toBeDefined()
+                console.log('Avatar Uploaded, URL:', url)
+            }
+        })
+
+        it('Get My Resume (With Avatar)', async () => {
+            if (!candidateUser) throw new Error('No candidate user')
+            const { data, error } = await supabaseService.getMyResume(candidateUser.id)
+            expect(error).toBeNull()
+            expect(data).toBeDefined()
+            // Check if avatar_url is populated (it should be resolved from avatar_id)
+            // Note: If upload failed (e.g. storage bucket missing), this might be null.
+            // But if upload succeeded, this should be a string.
+            console.log('Resume Avatar URL:', data?.avatar_url)
         })
 
         it('Get Jobs List (Expect Empty due to RLS)', async () => {

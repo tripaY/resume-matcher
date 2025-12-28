@@ -1,101 +1,213 @@
 <template>
   <div class="detail-container">
-    <el-button @click="$router.back()" class="mb-20">返回列表</el-button>
-    
     <div v-if="loading" class="loading-state">
         <el-skeleton :rows="10" animated />
     </div>
 
-    <div v-else class="content-wrapper">
-        <!-- 左侧：岗位JD -->
-        <div class="left-panel">
-            <el-card class="box-card">
-                <template #header>
-                    <div class="card-header">
-                        <span>岗位详情 #{{ job?.id }}</span>
-                        <el-tag type="success">{{ job?.level }}</el-tag>
-                    </div>
-                </template>
-                <div class="job-info">
-                    <h2>{{ job?.title }}</h2>
-                    <p><el-icon><Location /></el-icon> {{ job?.city }}</p>
-                    <p><el-icon><Timer /></el-icon> 最低{{ job?.min_years }}年经验</p>
-                    <p><el-icon><School /></el-icon> {{ job?.degree_required }}</p>
-                    <p class="salary"><el-icon><Money /></el-icon> {{ job?.salary_min }} - {{ job?.salary_max }}</p>
-                    
-                    <el-divider>必需技能</el-divider>
-                    <div class="skills">
-                        <el-tag v-for="s in job?.required_skills" :key="s" type="warning" class="mr-2 mb-2">{{ s }}</el-tag>
-                    </div>
-
-                    <el-divider>加分技能</el-divider>
-                    <div class="skills">
-                        <el-tag v-for="s in job?.nice_to_have_skills" :key="s" type="info" class="mr-2 mb-2">{{ s }}</el-tag>
-                    </div>
-
-                    <el-divider>职位描述</el-divider>
-                    <div class="desc-text">
-                        这里展示职位的详细描述文本...
-                    </div>
+    <div v-else class="content-layout">
+        <!-- Fixed Header -->
+        <div class="fixed-header">
+             <div class="header-inner">
+                <div class="header-left">
+                    <el-button @click="$router.back()">
+                        <el-icon class="mr-1"><ArrowLeft /></el-icon> 返回列表
+                    </el-button>
                 </div>
-            </el-card>
+                <div class="header-right" v-if="isAdmin">
+                    <template v-if="isEditing">
+                        <el-button @click="cancelEdit">放弃编辑</el-button>
+                        <el-button type="primary" @click="handleSave" :loading="saving">保存</el-button>
+                    </template>
+                    <template v-else>
+                        <el-button @click="toggleEdit">编辑岗位</el-button>
+                        <el-button type="success" @click="toggleMatches">
+                            {{ showMatches ? '隐藏匹配' : '智能匹配' }}
+                        </el-button>
+                    </template>
+                </div>
+             </div>
         </div>
 
-        <!-- 右侧：智能岗人匹配 -->
-        <div class="right-panel">
-            <div class="panel-header">
-                <div class="ph-title">
-                    <h3>推荐候选人 (Top Candidates)</h3>
-                    <el-button v-if="isAdmin" type="primary" size="small" :loading="matching" @click="runMatching">重新计算匹配</el-button>
-                </div>
-                <el-alert title="已为您筛选出最匹配的候选人，按分数降序排列" type="success" :closable="false" />
-            </div>
+        <!-- Scrollable Content -->
+        <div class="scrollable-content">
+            <div class="main-layout" :class="{ 'has-sidebar': showMatches }">
+                <!-- Job Detail Section -->
+                <div class="job-section">
+                    <el-card class="box-card job-card" shadow="never">
+                         <!-- Job Title & Meta -->
+                         <div class="job-header-info">
+                            <div class="title-row">
+                                <el-input v-if="isEditing" v-model="form.title" placeholder="职位名称" class="title-input mb-4" />
+                                <h1 v-else class="page-title">{{ form.title }}</h1>
+                                
+                                <div class="tags-row" v-if="!isEditing">
+                                    <el-tag type="success" class="mr-2">{{ form.level }}</el-tag>
+                                    <el-tag type="warning" effect="plain">{{ form.salary_min }} - {{ form.salary_max }}</el-tag>
+                                    <el-tag type="info" class="ml-2">{{ form.city }}</el-tag>
+                                </div>
+                            </div>
+                            
+                            <!-- Editing Meta Fields -->
+                            <div v-if="isEditing" class="edit-meta-grid mt-4">
+                                <el-form label-position="top">
+                                    <el-row :gutter="20">
+                                        <el-col :span="8">
+                                            <el-form-item label="职级">
+                                                <el-select v-model="form.level_id" placeholder="选择职级" style="width: 100%">
+                                                    <el-option v-for="l in metaStore.levels" :key="l.id" :label="l.name" :value="l.id" />
+                                                </el-select>
+                                            </el-form-item>
+                                        </el-col>
+                                        <el-col :span="8">
+                                            <el-form-item label="薪资范围">
+                                                <div class="flex gap-2">
+                                                    <el-input v-model="form.salary_min" placeholder="Min" />
+                                                    <span class="sep">-</span>
+                                                    <el-input v-model="form.salary_max" placeholder="Max" />
+                                                </div>
+                                            </el-form-item>
+                                        </el-col>
+                                        <el-col :span="8">
+                                            <el-form-item label="城市">
+                                                <el-select v-model="form.city_id" placeholder="选择城市" style="width: 100%">
+                                                    <el-option v-for="c in metaStore.cities" :key="c.id" :label="c.name" :value="c.id" />
+                                                </el-select>
+                                            </el-form-item>
+                                        </el-col>
+                                    </el-row>
+                                    <el-row :gutter="20">
+                                        <el-col :span="8">
+                                            <el-form-item label="最低经验(年)">
+                                                <el-input-number v-model="form.min_years" :min="0" style="width: 100%" />
+                                            </el-form-item>
+                                        </el-col>
+                                        <el-col :span="8">
+                                            <el-form-item label="学历要求">
+                                                <el-select v-model="form.degree_required_id" placeholder="学历要求" style="width: 100%">
+                                                    <el-option v-for="d in metaStore.degrees" :key="d.id" :label="d.name" :value="d.id" />
+                                                </el-select>
+                                            </el-form-item>
+                                        </el-col>
+                                    </el-row>
+                                </el-form>
+                            </div>
 
-            <div v-loading="matchLoading" class="match-list">
-                <el-empty v-if="!matches.length" description="暂无匹配候选人" />
-                
-                <el-card v-for="match in matches" :key="match.resume.id" class="match-card mb-20" shadow="hover">
-                    <div class="match-header">
-                        <div class="candidate-info">
-                            <h4>{{ match.resume.candidate_name }}</h4>
-                            <span class="sub-info">{{ match.resume.gender }} | {{ match.resume.years_of_experience }}年</span>
-                        </div>
-                        <div class="score-badge" :class="getScoreClass(match.score)">
-                            {{ match.score }}分
-                        </div>
-                    </div>
-                    
-                    <div class="resume-summary">
-                        <span><el-icon><Location /></el-icon> {{ match.resume.expected_city }}</span>
-                        <span><el-icon><User /></el-icon> {{ match.resume.current_level }}</span>
-                        <span><el-icon><School /></el-icon> {{ getHighestDegree(match.resume) }}</span>
-                    </div>
-
-                    <div class="match-analysis">
-                         <!-- 硬性匹配分析 -->
-                         <div v-if="match.calculate_reason" class="analysis-section">
-                             <div class="reason-title">📊 硬性指标 ({{ match.calculate_score }}分)</div>
-                             <div class="reason-content">{{ match.calculate_reason }}</div>
+                            <!-- Read-only Meta Info -->
+                            <div v-else class="meta-info-grid mt-6">
+                                <div class="info-item">
+                                    <el-icon><Location /></el-icon> {{ form.city }}
+                                </div>
+                                <div class="info-item">
+                                    <el-icon><Timer /></el-icon> 最低 {{ form.min_years }} 年经验
+                                </div>
+                                <div class="info-item">
+                                    <el-icon><School /></el-icon> {{ form.degree_required }}
+                                </div>
+                            </div>
                          </div>
+
+                         <el-divider />
                          
-                         <!-- LLM 匹配分析 -->
-                         <div class="analysis-section mt-2">
-                             <div class="reason-title">
-                                🤖 AI 评价 
-                                <span v-if="match.llm_score">({{ match.llm_score }}分)</span>
-                                <span v-else class="text-gray-400 text-xs">(分析中...)</span>
-                             </div>
-                             <div v-if="match.llm_reason" class="reason-content">{{ match.llm_reason }}</div>
-                             <div v-else class="loading-ai">
-                                <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读...
-                             </div>
+                         <!-- Skills -->
+                         <div class="section-block">
+                            <h3 class="section-title">必需技能</h3>
+                            <div v-if="isEditing">
+                                 <el-select 
+                                    v-model="form.required_skill_ids" 
+                                    multiple 
+                                    filterable 
+                                    placeholder="选择技能"
+                                    class="w-full"
+                                    style="width: 100%"
+                                >
+                                    <el-option v-for="s in metaStore.skills" :key="s.id" :label="s.name" :value="s.id" />
+                                </el-select>
+                            </div>
+                            <div v-else class="tags-wrapper">
+                                <el-tag v-for="s in form.required_skills" :key="s" class="mr-2 mb-2" type="danger" effect="light">{{ s }}</el-tag>
+                                <span v-if="!form.required_skills?.length" class="text-gray-400">无</span>
+                            </div>
                          </div>
+
+                         <div class="section-block mt-6">
+                            <h3 class="section-title">加分技能</h3>
+                            <div v-if="isEditing">
+                                 <el-select 
+                                    v-model="form.nice_skill_ids" 
+                                    multiple 
+                                    filterable 
+                                    placeholder="选择技能"
+                                    class="w-full"
+                                    style="width: 100%"
+                                >
+                                    <el-option v-for="s in metaStore.skills" :key="s.id" :label="s.name" :value="s.id" />
+                                </el-select>
+                            </div>
+                            <div v-else class="tags-wrapper">
+                                <el-tag v-for="s in form.nice_to_have_skills" :key="s" type="info" class="mr-2 mb-2">{{ s }}</el-tag>
+                                <span v-if="!form.nice_to_have_skills?.length" class="text-gray-400">无</span>
+                            </div>
+                         </div>
+
+                         <el-divider />
+
+                         <!-- Description -->
+                         <div class="section-block">
+                            <h3 class="section-title">职位描述</h3>
+                            <el-input 
+                                v-if="isEditing" 
+                                v-model="form.description" 
+                                type="textarea" 
+                                :rows="10" 
+                                placeholder="输入职位描述..." 
+                            />
+                            <div v-else class="desc-content whitespace-pre-wrap leading-relaxed text-gray-700">
+                                {{ form.description || '暂无详细描述' }}
+                            </div>
+                         </div>
+                    </el-card>
+                </div>
+
+                <!-- Matches Sidebar (Admin Only) -->
+                <div v-if="showMatches && isAdmin" class="matches-sidebar">
+                     <div class="sidebar-header">
+                        <h3>推荐候选人</h3>
+                        <el-button type="primary" link size="small" :loading="matching" @click="runMatching">重新匹配</el-button>
                     </div>
                     
-                    <div class="card-footer">
-                        <el-button type="primary" link @click="$router.push(`/resumes/${match.resume.id}`)">查看简历详情 -></el-button>
+                    <div v-loading="matchLoading" class="match-list-container">
+                        <el-empty v-if="!matches.length" description="暂无匹配候选人" image-size="80" />
+                        
+                        <div v-else class="match-cards">
+                            <el-card v-for="match in matches" :key="match.resume.id" class="match-card mb-3" shadow="hover" :body-style="{ padding: '15px' }">
+                                <div class="match-card-header flex justify-between items-start">
+                                    <div class="candidate-basic">
+                                        <div class="font-bold text-lg">{{ match.resume.candidate_name }}</div>
+                                        <div class="text-xs text-gray-500 mt-1">{{ match.resume.gender }} | {{ match.resume.years_of_experience }}年 | {{ match.resume.current_level }}</div>
+                                    </div>
+                                    <div class="score-badge" :class="getScoreClass(match.score)">
+                                        {{ match.score }}
+                                    </div>
+                                </div>
+                                
+                                <div class="match-reasons mt-3">
+                                    <div v-if="match.llm_reason" class="reason-text text-xs text-gray-600 line-clamp-3">
+                                        {{ match.llm_reason }}
+                                    </div>
+                                    <div v-else-if="match.calculate_reason" class="reason-text text-xs text-gray-600 line-clamp-3">
+                                        {{ match.calculate_reason }}
+                                    </div>
+                                </div>
+
+                                <div class="card-actions mt-3 pt-3 border-t border-gray-100 text-right">
+                                    <el-button type="primary" link size="small" @click="$router.push(`/resumes/${match.resume.id}`)">
+                                        查看简历 <el-icon class="el-icon--right"><Right /></el-icon>
+                                    </el-button>
+                                </div>
+                            </el-card>
+                        </div>
                     </div>
-                </el-card>
+                </div>
             </div>
         </div>
     </div>
@@ -103,22 +215,50 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
-import { Location, Money, User, Timer, School, Loading } from '@element-plus/icons-vue'
+import { useMetaStore } from '../stores/metaStore'
+import { Location, Money, User, Timer, School, Loading, ArrowLeft, Right } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const jobId = Number(route.params.id)
+const metaStore = useMetaStore()
 
 const loading = ref(true)
-const matchLoading = ref(true)
-const job = ref<any>(null)
-const matches = ref<any[]>([])
-const currentUser = ref<any>(null)
-const isAdmin = ref(false)
+const saving = ref(false)
+const isEditing = ref(false)
+const showMatches = ref(false)
+const matchLoading = ref(false)
 const matching = ref(false)
+
+const isAdmin = ref(false)
+const currentUser = ref<any>(null)
+
+// Form Data
+const form = reactive({
+    id: 0,
+    title: '',
+    city: '',
+    city_id: null as number | null,
+    level: '',
+    level_id: null as number | null,
+    salary_min: 0,
+    salary_max: 0,
+    min_years: 0,
+    degree_required: '',
+    degree_required_id: null as number | null,
+    required_skills: [] as string[],
+    required_skill_ids: [] as number[],
+    nice_to_have_skills: [] as string[],
+    nice_skill_ids: [] as number[],
+    description: ''
+})
+
+// Original Data for Cancel
+const originalData = ref<any>(null)
+const matches = ref<any[]>([])
 
 const getScoreClass = (score: number) => {
     if (score >= 80) return 'score-high'
@@ -126,24 +266,89 @@ const getScoreClass = (score: number) => {
     return 'score-low'
 }
 
-const getHighestDegree = (resume: any) => {
-    if (!resume.educations || !resume.educations.length) return '无'
-    const edu = resume.educations[0]
-    // Handle both transformed and raw structure just in case
-    return edu?.degrees?.name || edu?.degree || '无'
-}
-
 const initData = async () => {
+    loading.value = true
     try {
         const res = await supabaseService.getJobDetail(jobId)
-        job.value = res.data
-        loading.value = false
-        
-        loadMatches()
+        if (res.data) {
+            originalData.value = JSON.parse(JSON.stringify(res.data))
+            syncForm(res.data)
+        }
     } catch (e) {
         console.error(e)
+        ElMessage.error('加载岗位详情失败')
     } finally {
         loading.value = false
+    }
+}
+
+const syncForm = (data: any) => {
+    form.id = data.id
+    form.title = data.title
+    form.city = data.city
+    form.city_id = data.city_id
+    form.level = data.level
+    form.level_id = data.level_id
+    form.salary_min = data.salary_min
+    form.salary_max = data.salary_max
+    form.min_years = data.min_years
+    form.degree_required = data.degree_required
+    form.degree_required_id = data.degree_required_id
+    form.required_skills = [...(data.required_skills || [])]
+    form.required_skill_ids = [...(data.required_skill_ids || [])]
+    form.nice_to_have_skills = [...(data.nice_to_have_skills || [])]
+    form.nice_skill_ids = [...(data.nice_skill_ids || [])]
+    form.description = data.description
+}
+
+const toggleEdit = () => {
+    isEditing.value = true
+    showMatches.value = false // Hide matches when editing to focus
+}
+
+const cancelEdit = () => {
+    isEditing.value = false
+    if (originalData.value) {
+        syncForm(originalData.value)
+    }
+}
+
+const handleSave = async () => {
+    saving.value = true
+    try {
+        const updateData = {
+            title: form.title,
+            city_id: form.city_id,
+            level_id: form.level_id,
+            salary_min: Number(form.salary_min),
+            salary_max: Number(form.salary_max),
+            min_years: Number(form.min_years),
+            degree_required_id: form.degree_required_id,
+            required_skill_ids: form.required_skill_ids,
+            nice_skill_ids: form.nice_skill_ids,
+            description: form.description
+        }
+        
+        const { error } = await supabaseService.updateJob(jobId, updateData)
+        if (error) throw error
+        
+        ElMessage.success('保存成功')
+        isEditing.value = false
+        
+        // Refresh data to get updated names (since we only sent IDs)
+        await initData()
+    } catch (e) {
+        console.error(e)
+        ElMessage.error('保存失败')
+    } finally {
+        saving.value = false
+    }
+}
+
+const toggleMatches = () => {
+    showMatches.value = !showMatches.value
+    if (showMatches.value && matches.value.length === 0) {
+        loadMatches()
     }
 }
 
@@ -153,53 +358,47 @@ const loadMatches = async () => {
         const matchRes = await supabaseService.getJobMatches(jobId)
         if (matchRes.data) {
             matches.value = matchRes.data
-            
-             // Trigger LLM evaluation for matches missing llm_score
+            // Trigger LLM evaluation if needed
             matches.value.forEach(async (match) => {
                 if (match.llm_score === null || match.llm_score === undefined) {
                     try {
-                        const { data, error } = await supabaseService.evaluateMatch(match.resume.id, jobId)
-                        if (!error && data && data.success) {
-                            // Update local state
+                         const { data, error } = await supabaseService.evaluateMatch(match.resume.id, jobId)
+                         if (!error && data && data.success) {
                             match.llm_score = data.score
                             match.llm_reason = data.reason
                         }
-                    } catch (e) {
-                        console.error('Failed to evaluate match', e)
-                    }
+                    } catch (e) {}
                 }
             })
         }
+    } catch (e) {
+        console.error(e)
     } finally {
         matchLoading.value = false
     }
 }
 
 const runMatching = async () => {
-    if (!isAdmin.value) return
     matching.value = true
     try {
-        // 1. Get all resumes
         const { data: resumesData } = await supabaseService.getResumes({ page: 1, pageSize: 100 })
         const resumes = resumesData.items
-        
-        // 2. Run match
         let successCount = 0
         for (const resume of resumes) {
             const { error } = await supabaseService.evaluateMatch(resume.id, jobId)
             if (!error) successCount++
         }
-        ElMessage.success(`匹配计算完成，成功匹配 ${successCount} 份简历`)
+        ElMessage.success(`重新计算完成，处理 ${successCount} 份简历`)
         loadMatches()
     } catch (e) {
-        console.error(e)
-        ElMessage.error('匹配计算出错')
+        ElMessage.error('匹配计算失败')
     } finally {
         matching.value = false
     }
 }
 
 onMounted(async () => {
+    metaStore.fetchMeta()
     const { data: { user } } = await supabaseService.getUser()
     if (user) {
         currentUser.value = user
@@ -213,149 +412,151 @@ onMounted(async () => {
 
 <style scoped>
 .detail-container {
-    max-width: 1400px;
-    margin: 0 auto;
-    padding: 20px;
-}
-.mb-20 { margin-bottom: 20px; }
-.mr-2 { margin-right: 8px; }
-.mb-2 { margin-bottom: 8px; }
-.mt-2 { margin-top: 8px; }
-
-.content-wrapper {
+    height: calc(100vh - 40px); /* Adjust based on global layout */
     display: flex;
-    gap: 20px;
-    align-items: flex-start;
+    flex-direction: column;
+    background: #f5f7fa;
 }
 
-.left-panel {
-    width: 30%;
-    min-width: 300px;
+.fixed-header {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    z-index: 100;
+    padding: 0 40px;
+    display: flex;
+    align-items: center;
 }
-.right-panel {
-    flex: 1;
-}
-
-.ph-title {
+.header-inner {
+    width: 100%;
+    max-width: 1200px;
+    margin: 0 auto;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 10px;
-}
-.ph-title h3 {
-    margin: 0;
 }
 
-.job-info h2 { margin-top: 0; }
-.job-info p {
+.scrollable-content {
+    margin-top: 60px;
+    padding: 20px;
+    height: calc(100vh - 60px);
+    overflow-y: auto;
+}
+
+.main-layout {
+    max-width: 1000px;
+    margin: 0 auto;
+    display: flex;
+    gap: 20px;
+    transition: all 0.3s ease;
+}
+.main-layout.has-sidebar {
+    max-width: 1400px; /* Expand when sidebar is open */
+}
+
+.job-section {
+    flex: 1;
+    min-width: 0; /* Prevent overflow */
+}
+
+.matches-sidebar {
+    width: 350px;
+    flex-shrink: 0;
+    background: #fff;
+    border-radius: 4px;
+    border: 1px solid #ebeef5;
+    display: flex;
+    flex-direction: column;
+    height: fit-content;
+    max-height: calc(100vh - 100px);
+    position: sticky;
+    top: 20px;
+}
+
+.sidebar-header {
+    padding: 15px;
+    border-bottom: 1px solid #eee;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.sidebar-header h3 { margin: 0; font-size: 16px; }
+
+.match-list-container {
+    padding: 15px;
+    overflow-y: auto;
+    max-height: calc(100vh - 160px);
+}
+
+.job-card {
+    min-height: 500px;
+}
+
+.page-title {
+    margin: 0 0 10px 0;
+    font-size: 24px;
+    color: #303133;
+}
+
+.meta-info-grid {
+    display: flex;
+    gap: 30px;
+    color: #606266;
+}
+.info-item {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin: 8px 0;
-    color: #606266;
-}
-.salary {
-    color: #f56c6c !important;
-    font-weight: bold;
-    font-size: 18px;
+    font-size: 14px;
 }
 
-.panel-header {
-    margin-bottom: 20px;
-}
-
-/* Match Card Styles */
-.match-card {
-    transition: all 0.3s;
-}
-.match-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-}
-.match-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 15px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 10px;
-}
-.candidate-info h4 {
-    margin: 0 0 5px 0;
-    font-size: 18px;
-    color: #303133;
-}
-.sub-info {
-    font-size: 13px;
-    color: #909399;
-}
-.score-badge {
+.section-title {
     font-size: 16px;
-    font-weight: bold;
-    padding: 4px 10px;
-    border-radius: 4px;
-}
-.score-badge.success { color: #67c23a; background: #f0f9eb; }
-.score-badge.warning { color: #e6a23c; background: #fdf6ec; }
-.score-badge.danger { color: #f56c6c; background: #fef0f0; }
-
-.resume-summary {
-    display: flex;
-    gap: 20px;
-    margin-bottom: 15px;
-    font-size: 14px;
-    color: #606266;
-    background: #f5f7fa;
-    padding: 10px;
-    border-radius: 4px;
-}
-.resume-summary span {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-/* Analysis Section Styles */
-.match-analysis {
-    margin-top: 15px;
-}
-.analysis-section {
-    margin-bottom: 12px;
-    padding: 12px;
-    background-color: #f8f9fa;
-    border-radius: 6px;
-    border: 1px solid #ebeef5;
-}
-.reason-title {
     font-weight: 600;
-    font-size: 14px;
     color: #303133;
-    margin-bottom: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-}
-.reason-content {
-    font-size: 13px;
-    color: #606266;
-    white-space: pre-wrap;
-    line-height: 1.6;
-}
-.loading-ai {
-    font-size: 13px;
-    color: #909399;
-    font-style: italic;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 0;
+    margin-bottom: 15px;
+    border-left: 4px solid #409eff;
+    padding-left: 10px;
 }
 
-.card-footer {
-    margin-top: 15px;
-    display: flex;
-    justify-content: flex-end;
-    border-top: 1px solid #eee;
-    padding-top: 10px;
+.score-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+    font-size: 14px;
 }
+.score-high { color: #67c23a; background: #f0f9eb; }
+.score-mid { color: #e6a23c; background: #fdf6ec; }
+.score-low { color: #f56c6c; background: #fef0f0; }
+
+.line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.mr-1 { margin-right: 4px; }
+.mr-2 { margin-right: 8px; }
+.ml-2 { margin-left: 8px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; }
+.mt-4 { margin-top: 16px; }
+.mt-6 { margin-top: 24px; }
+.pt-3 { padding-top: 12px; }
+.text-gray-400 { color: #909399; }
+.text-gray-500 { color: #909399; }
+.text-gray-600 { color: #606266; }
+.text-gray-700 { color: #303133; }
+.text-xs { font-size: 12px; }
+.text-right { text-align: right; }
+.font-bold { font-weight: bold; }
+.text-lg { font-size: 18px; }
 </style>

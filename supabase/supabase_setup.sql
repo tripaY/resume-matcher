@@ -109,9 +109,45 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- 2.4 启用"公开业务表"通用策略 (Public Read + Owner Write)
+-- 规则: 所有人可读，拥有者/管理员可写
+CREATE OR REPLACE FUNCTION enable_public_read_owner_rls(table_name text, userid_col text DEFAULT 'user_id') RETURNS void AS $$
+BEGIN
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
 
--- =============================================================================
--- 3. 用户档案 (Profiles) & 权限基础
+    -- 策略1: 公开读取
+    EXECUTE format('CREATE POLICY "Public Read" ON %I FOR SELECT USING (true)', table_name);
+
+    -- 策略2: 拥有者/管理员完全权限
+    EXECUTE format(
+        'CREATE POLICY "Owner and Admin Full Access" ON %I FOR ALL ' ||
+        'USING (auth.uid() = %I OR public.is_admin()) ' ||
+        'WITH CHECK (auth.uid() = %I OR public.is_admin())', 
+        table_name, userid_col, userid_col
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+-- 2.5 启用"公开子表"通用策略 (Public Read + Parent Owner Write)
+CREATE OR REPLACE FUNCTION enable_public_read_child_rls(table_name text, parent_table text, fk_col text) RETURNS void AS $$
+BEGIN
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', table_name);
+
+    -- 策略1: 公开读取
+    EXECUTE format('CREATE POLICY "Public Read" ON %I FOR SELECT USING (true)', table_name);
+
+    -- 策略2: 继承父表权限
+    EXECUTE format(
+        'CREATE POLICY "Parent Owner and Admin Full Access" ON %I FOR ALL ' ||
+        'USING (EXISTS (SELECT 1 FROM %I WHERE id = %I.%I AND (user_id = auth.uid() OR public.is_admin()))) ' ||
+        'WITH CHECK (EXISTS (SELECT 1 FROM %I WHERE id = %I.%I AND (user_id = auth.uid() OR public.is_admin())))',
+        table_name, parent_table, table_name, fk_col, parent_table, table_name, fk_col
+    );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
+
+-- 2.6 启用"存储桶"通用策略 (Storage Bucket)
 -- =============================================================================
 
 -- 3.1 角色表 (Lookup Table)
@@ -292,6 +328,7 @@ CREATE TABLE IF NOT EXISTS public.jobs (
     industry_id INTEGER REFERENCES public.industries(id),
     salary_min INTEGER,
     salary_max INTEGER,
+    description TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -301,7 +338,7 @@ COMMENT ON COLUMN public.jobs.min_years IS '最低工作年限要求';
 COMMENT ON COLUMN public.jobs.degree_required_id IS '最低学历要求ID';
 
 -- 应用 Owner RLS
-SELECT enable_owner_rls('jobs');
+SELECT enable_public_read_owner_rls('jobs');
 
 
 -- 6.2 子表
@@ -356,7 +393,7 @@ CREATE TABLE IF NOT EXISTS public.job_skills (
 COMMENT ON TABLE public.job_skills IS '职位-技能关联表';
 COMMENT ON COLUMN public.job_skills.is_required IS '是否为必修技能';
 -- 应用 Child RLS
-SELECT enable_child_rls('job_skills', 'jobs', 'job_id');
+SELECT enable_public_read_child_rls('job_skills', 'jobs', 'job_id');
 
 
 -- 6.3 匹配评估表 (Match Evaluations)

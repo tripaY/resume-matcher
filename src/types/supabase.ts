@@ -90,17 +90,24 @@ export interface JobDTO {
   id: number
   title: string
   city: string
+  city_id?: number
   min_years: number
   level: string
+  level_id?: number
   salary_min: number
   salary_max: number
   required_skills: string[]
+  required_skill_ids?: number[]
   nice_to_have_skills: string[]
+  nice_skill_ids?: number[]
   degree: string
   degree_required: string // Alias
+  degree_required_id?: number
   industry: string
+  industry_id?: number
   description?: string
 }
+
 
 export interface ResumeDTO {
   id: number
@@ -112,12 +119,14 @@ export interface ResumeDTO {
   years_of_experience: number // Alias
   level: string
   current_level: string // Alias
+  expected_title?: string // Added
   salary_min: number
   salary_max: number
   skills: string[]
   degree: string
   gender?: string
   avatar_url?: string | null // Computed from Profile
+  avatar_id?: string | null
   educations?: Education[]
   experiences?: Experience[]
 }

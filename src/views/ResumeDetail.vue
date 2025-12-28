@@ -1,222 +1,347 @@
 <template>
   <div class="detail-container">
-    <div class="header-actions mb-20">
-      <el-button @click="$router.back()">返回</el-button>
-      <div v-if="isOwner" class="owner-actions">
-        <el-button v-if="!isEditing" type="primary" @click="startEditing">编辑简历</el-button>
-        <template v-else>
-          <el-button @click="cancelEditing">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="saveResume">保存更改</el-button>
-        </template>
-      </div>
-    </div>
-    
-    <div v-if="loading" class="loading-state">
+    <div v-if="loading" key="loading" class="loading-state">
         <el-skeleton :rows="10" animated />
     </div>
 
-    <div v-else class="content-wrapper">
-        <!-- 左侧：简历档案 (编辑/查看) -->
-        <div class="left-panel" :class="{ 'full-width': isEditing }">
-            <el-card class="box-card resume-card">
-                <template #header>
-                    <div class="card-header">
-                        <span>简历档案</span>
-                        <el-tag v-if="!isEditing">{{ resume?.current_level }}</el-tag>
-                        <el-select v-else v-model="form.current_level_id" placeholder="当前职级" size="small" style="width: 100px">
-                            <el-option v-for="l in meta.levels" :key="l.id" :label="l.name" :value="l.id" />
-                        </el-select>
-                    </div>
-                </template>
-                
-                <div class="resume-info">
-                    <!-- 头像区域 -->
-                    <div class="avatar-section">
-                        <el-upload
-                            v-if="isEditing"
-                            class="avatar-uploader"
-                            action="#"
-                            :show-file-list="false"
-                            :http-request="uploadAvatar"
-                            :before-upload="beforeAvatarUpload"
-                        >
-                            <div v-if="form.avatar_url" class="avatar-wrapper">
-                                <el-avatar :size="100" :src="form.avatar_url" />
-                                <div class="upload-mask"><el-icon><Plus /></el-icon></div>
-                            </div>
-                            <div v-else class="avatar-placeholder">
-                                <el-icon class="avatar-uploader-icon"><Plus /></el-icon>
-                                <span>上传头像</span>
-                            </div>
-                        </el-upload>
-                        <el-avatar v-else :size="100" :src="resume?.avatar_url || defaultAvatar" />
-                    </div>
+    <div v-else-if="showEmptyState" key="empty" class="empty-state-container h-full flex items-center justify-center">
+        <el-empty description="您还没有简历">
+            <el-button type="primary" size="large" @click="startCreating">完善简历</el-button>
+        </el-empty>
+    </div>
 
-                    <!-- 基本信息 -->
-                    <div class="info-section">
-                        <h2 v-if="!isEditing">{{ resume?.candidate_name }}</h2>
-                        <el-input v-else v-model="form.candidate_name" placeholder="姓名" class="mb-2" />
-                        
-                        <div class="info-row">
-                            <el-icon><Location /></el-icon> 
-                            <span v-if="!isEditing">{{ resume?.expected_city }}</span>
-                            <el-select v-else v-model="form.expected_city_id" placeholder="期望城市" size="small">
-                                <el-option v-for="c in meta.cities" :key="c.id" :label="c.name" :value="c.id" />
-                            </el-select>
-                        </div>
-                        
-                        <div class="info-row">
-                            <el-icon><Briefcase /></el-icon> 
-                            <span v-if="!isEditing">{{ resume?.years_of_experience }}年经验</span>
-                            <el-input-number v-else v-model="form.years_of_experience" :min="0" size="small" controls-position="right" />
-                            <span v-if="isEditing" class="ml-2">年</span>
-                        </div>
-                        
-                        <div class="info-row">
-                            <el-icon><Money /></el-icon> 
-                            <span v-if="!isEditing">期望薪资: {{ resume?.expected_salary_min }} - {{ resume?.expected_salary_max }}</span>
-                            <div v-else class="salary-inputs">
-                                <el-input-number v-model="form.expected_salary_min" :min="0" size="small" placeholder="Min" :step="1000" />
-                                <span class="separator">-</span>
-                                <el-input-number v-model="form.expected_salary_max" :min="0" size="small" placeholder="Max" :step="1000" />
+    <div v-else key="content" class="content-layout">
+        <div class="fixed-header">
+             <div class="header-content flex justify-end gap-2">
+                <template v-if="isEditing">
+                    <el-button @click="cancelEdit">放弃编辑</el-button>
+                    <el-button type="primary" @click="handleSave" :loading="saving">
+                       保存
+                    </el-button>
+                </template>
+                <template v-else>
+                    <el-button @click="toggleEdit">
+                       去编辑
+                    </el-button>
+                    <el-button type="success" @click="toggleMatches">
+                       智能匹配
+                    </el-button>
+                </template>
+             </div>
+        </div>
+
+        <div class="scrollable-content">
+            <div class="main-layout flex gap-4" style="display: flex; gap: 20px; align-items: flex-start;">
+                <!-- 左侧：简历档案 (编辑/查看) -->
+                <div class="resume-section" style="flex: 1; min-width: 0;">
+                    <el-card class="box-card resume-card" shadow="never" :body-style="{ padding: '0px' }">
+                        <div class="resume-info" style="padding: 20px;">
+                            <!-- 基本信息 - 垂直排列 -->
+                            <div class="info-section flex-col" style="display: flex; flex-direction: column; gap: 15px;">
+                                <div class="info-row">
+                                    <span class="label">姓名:</span>
+                                    <div class="value-content">
+                                        <el-input 
+                                            v-if="isEditing" 
+                                            v-model="form.candidate_name" 
+                                            placeholder="姓名" 
+                                        />
+                                        <span v-else class="text-large font-bold">{{ form.candidate_name || resume?.candidate_name || '您的姓名' }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- 头像区域 (移到姓名下方) -->
+                                <div class="info-row">
+                                    <span class="label">头像:</span>
+                                    <div class="value-content avatar-section">
+                                        <el-upload
+                                            v-if="isEditing"
+                                            class="avatar-uploader"
+                                            action="#"
+                                            :show-file-list="false"
+                                            :http-request="uploadAvatar"
+                                            :before-upload="beforeAvatarUpload"
+                                        >
+                                            <div v-if="form.avatar_url || resume?.avatar_url" class="avatar-wrapper">
+                                                <el-avatar :size="100" :src="form.avatar_url || resume?.avatar_url" />
+                                                <div class="upload-mask"><el-icon><Plus /></el-icon></div>
+                                            </div>
+                                            <div v-else class="avatar-placeholder">
+                                                <el-icon class="avatar-uploader-icon"><Plus /></el-icon>
+                                                <span>上传头像</span>
+                                            </div>
+                                        </el-upload>
+                                        <el-avatar v-else :size="100" :src="resume?.avatar_url || defaultAvatar" />
+                                    </div>
+                                </div>
+                                
+                                <div class="info-row">
+                                    <span class="label">当前职级:</span>
+                                    <div class="value-content">
+                                        <el-select 
+                                            v-if="isEditing" 
+                                            v-model="form.current_level_id" 
+                                            placeholder="当前职级" 
+                                            style="width: 100%"
+                                        >
+                                            <el-option v-for="l in meta.levels" :key="l.id" :label="l.name" :value="l.id" />
+                                        </el-select>
+                                        <span v-else>{{ resume?.current_level || '未设置' }}</span>
+                                    </div>
+                                </div>
+
+                            <div class="info-row">
+                                <span class="label">期望职位:</span>
+                                <div class="value-content">
+                                    <el-input 
+                                        v-if="isEditing" 
+                                        v-model="form.expected_title" 
+                                        placeholder="期望职位 (如: 前端开发工程师)" 
+                                    />
+                                    <span v-else>{{ form.expected_title || resume?.expected_title || '未设置' }}</span>
+                                </div>
+                            </div>
+
+                            <div class="info-row">
+                                <span class="label">期望城市:</span> 
+                                <div class="value-content">
+                                    <el-select 
+                                        v-if="isEditing" 
+                                        v-model="form.expected_city_id" 
+                                        placeholder="期望城市" 
+                                        style="width: 100%"
+                                    >
+                                        <el-option v-for="c in meta.cities" :key="c.id" :label="c.name" :value="c.id" />
+                                    </el-select>
+                                    <span v-else>{{ getCityName(form.expected_city_id) || resume?.expected_city || '未设置' }}</span>
+                                </div>
+                            </div>
+                            
+                            <div class="info-row">
+                                <span class="label">工作经验:</span> 
+                                <div class="value-content">
+                                    <div v-if="isEditing" class="inline-edit flex items-center" style="flex-wrap: nowrap;">
+                                        <el-input-number 
+                                            v-model="form.years_of_experience" 
+                                            :min="0" 
+                                            controls-position="right"
+                                            style="width: 100%"
+                                        />
+                                        <span class="ml-2 whitespace-nowrap">年</span>
+                                    </div>
+                                    <span v-else>{{ form.years_of_experience ?? resume?.years_of_experience }} 年</span>
+                                </div>
+                            </div>
+                            
+                            <div class="info-row">
+                                <span class="label">期望薪资:</span> 
+                                <div class="value-content">
+                                    <div v-if="isEditing" class="salary-inputs flex items-center gap-2">
+                                        <el-input-number v-model="form.expected_salary_min" :min="0" placeholder="Min" :step="1000" style="width: 100%" />
+                                        <span class="separator">-</span>
+                                        <el-input-number v-model="form.expected_salary_max" :min="0" placeholder="Max" :step="1000" style="width: 100%" />
+                                    </div>
+                                    <span v-else>{{ form.expected_salary_min ?? resume?.expected_salary_min }} - {{ form.expected_salary_max ?? resume?.expected_salary_max }}</span>
+                                </div>
                             </div>
                         </div>
                     </div>
-                    
+                        
                     <el-divider>技能栈</el-divider>
                     <div class="skills-section">
-                        <div v-if="!isEditing">
-                            <el-tag v-for="s in resume?.skills" :key="s" class="mr-2 mb-2">{{ s }}</el-tag>
+                        <div v-if="isEditing">
+                            <el-select 
+                                v-model="form.skill_ids" 
+                                multiple 
+                                filterable 
+                                placeholder="选择技能" 
+                                class="w-100"
+                            >
+                                <el-option v-for="s in meta.skills" :key="s.id" :label="s.name" :value="s.id" />
+                            </el-select>
                         </div>
-                        <el-select 
-                            v-else 
-                            v-model="form.skill_ids" 
-                            multiple 
-                            filterable 
-                            placeholder="选择技能" 
-                            class="w-100"
-                        >
-                            <el-option v-for="s in meta.skills" :key="s.id" :label="s.name" :value="s.id" />
-                        </el-select>
+                        <div v-else class="min-h-20">
+                            <el-tag v-for="s in getSkillNames(form.skill_ids)" :key="s" class="mr-2 mb-2">{{ s }}</el-tag>
+                            <span v-if="!form.skill_ids?.length" class="text-gray">暂无技能</span>
+                        </div>
                     </div>
 
                     <el-divider>教育背景</el-divider>
                     <div class="educations-section">
-                        <div v-if="!isEditing">
-                            <div v-for="(edu, idx) in resume?.educations" :key="idx" class="edu-item">
-                                <p><strong>{{ edu.school }}</strong></p>
-                                <p>{{ edu.degree?.name }} - {{ edu.major_industry?.name || '相关专业' }}</p>
-                            </div>
-                        </div>
-                        <div v-else>
-                            <div v-for="(edu, idx) in form.educations" :key="idx" class="edit-item-card">
-                                <div class="edit-row">
-                                    <el-input v-model="edu.school" placeholder="学校名称" />
-                                    <el-button type="danger" circle size="small" @click="removeEducation(idx)"><el-icon><Delete /></el-icon></el-button>
+                        <div v-for="(edu, idx) in form.educations" :key="edu._key || idx" class="edu-item-wrapper relative group">
+                            <div class="item-content-group">
+                                <el-button 
+                                    v-if="isEditing" 
+                                    class="delete-btn" 
+                                    type="danger" 
+                                    circle 
+                                    size="small" 
+                                    @click.stop="removeEducation(idx)"
+                                >
+                                    <el-icon><Delete /></el-icon>
+                                </el-button>
+                                
+                                <div class="edu-row mb-2">
+                                    <div class="w-full">
+                                        <el-input 
+                                            v-if="isEditing" 
+                                            v-model="edu.school" 
+                                            placeholder="学校名称" 
+                                        />
+                                        <strong v-else class="block text-lg mb-1">{{ edu.school || '学校名称' }}</strong>
+                                    </div>
                                 </div>
-                                <div class="edit-row mt-2">
-                                    <el-select v-model="edu.degree_id" placeholder="学历">
-                                        <el-option v-for="d in meta.degrees" :key="d.id" :label="d.name" :value="d.id" />
-                                    </el-select>
-                                    <el-select v-model="edu.major_industry_id" placeholder="专业方向">
-                                        <el-option v-for="i in meta.industries" :key="i.id" :label="i.name" :value="i.id" />
-                                    </el-select>
+                                
+                                <div class="edu-row flex gap-4 items-center">
+                                    <div class="flex-1">
+                                        <el-select 
+                                            v-if="isEditing" 
+                                            v-model="edu.degree_id" 
+                                            placeholder="学历"
+                                            size="default"
+                                            style="width: 100%"
+                                        >
+                                            <el-option v-for="d in meta.degrees" :key="d.id" :label="d.name" :value="d.id" />
+                                        </el-select>
+                                        <span v-else class="block text-gray-600">{{ getDegreeName(edu.degree_id) || '学历' }}</span>
+                                    </div>
+                                    <span v-if="!isEditing" class="text-gray-300">|</span>
+                                    <div class="flex-1">
+                                        <el-select 
+                                            v-if="isEditing" 
+                                            v-model="edu.major_industry_id" 
+                                            placeholder="专业方向"
+                                            size="default"
+                                            style="width: 100%"
+                                        >
+                                            <el-option v-for="i in meta.industries" :key="i.id" :label="i.name" :value="i.id" />
+                                        </el-select>
+                                        <span v-else class="block text-gray-600">{{ getIndustryName(edu.major_industry_id) || '相关专业' }}</span>
+                                    </div>
                                 </div>
                             </div>
-                            <el-button class="mt-2 w-100" @click="addEducation">+ 添加教育经历</el-button>
+                            <el-divider v-if="idx < form.educations.length - 1" border-style="dashed" />
                         </div>
+                        <el-button v-if="isEditing" class="mt-4 w-100 dashed-btn" @click="addEducation">+ 添加教育经历</el-button>
                     </div>
 
                     <el-divider>工作经历</el-divider>
                     <div class="experiences-section">
-                         <div v-if="!isEditing">
-                            <div v-for="(exp, idx) in resume?.experiences" :key="idx" class="exp-item">
-                                <p><strong>{{ exp.company_name }}</strong> <el-tag size="small" type="info">{{ exp.industry?.name }}</el-tag></p>
-                                <p class="desc">{{ exp.description }}</p>
-                            </div>
-                        </div>
-                        <div v-else>
-                            <div v-for="(exp, idx) in form.experiences" :key="idx" class="edit-item-card">
-                                <div class="edit-row">
-                                    <el-input v-model="exp.company_name" placeholder="公司名称" />
-                                    <el-select v-model="exp.industry_id" placeholder="行业" style="width: 120px">
-                                        <el-option v-for="i in meta.industries" :key="i.id" :label="i.name" :value="i.id" />
-                                    </el-select>
-                                    <el-button type="danger" circle size="small" @click="removeExperience(idx)"><el-icon><Delete /></el-icon></el-button>
+                        <div v-for="(exp, idx) in form.experiences" :key="exp._key || idx" class="exp-item-wrapper relative group">
+                            <div class="item-content-group">
+                                <el-button 
+                                    v-if="isEditing" 
+                                    class="delete-btn" 
+                                    type="danger" 
+                                    circle 
+                                    size="small" 
+                                    @click.stop="removeExperience(idx)"
+                                >
+                                    <el-icon><Delete /></el-icon>
+                                </el-button>
+
+                                <div class="exp-row mb-2 flex flex-col gap-2">
+                                    <div class="w-full">
+                                        <el-input 
+                                            v-if="isEditing" 
+                                            v-model="exp.company_name" 
+                                            placeholder="公司名称" 
+                                            class="mb-2"
+                                        />
+                                        <strong v-else class="block text-lg mb-1">{{ exp.company_name || '公司名称' }}</strong>
+                                    </div>
+                                    <div class="w-full">
+                                        <el-select 
+                                            v-if="isEditing" 
+                                            v-model="exp.industry_id" 
+                                            placeholder="行业" 
+                                            size="default"
+                                            style="width: 100%"
+                                        >
+                                            <el-option v-for="i in meta.industries" :key="i.id" :label="i.name" :value="i.id" />
+                                        </el-select>
+                                        <el-tag v-else size="small" type="info">{{ getIndustryName(exp.industry_id) || '行业' }}</el-tag>
+                                    </div>
                                 </div>
-                                <el-input 
-                                    v-model="exp.description" 
-                                    type="textarea" 
-                                    :rows="3" 
-                                    placeholder="工作描述" 
-                                    class="mt-2" 
-                                />
+                                
+                                <div class="exp-desc mt-2">
+                                    <el-input 
+                                        v-if="isEditing" 
+                                        v-model="exp.description" 
+                                        type="textarea" 
+                                        :rows="3" 
+                                        placeholder="工作描述" 
+                                    />
+                                    <p v-else class="desc whitespace-pre-wrap text-gray-600 leading-relaxed">{{ exp.description || '工作描述...' }}</p>
+                                </div>
                             </div>
-                             <el-button class="mt-2 w-100" @click="addExperience">+ 添加工作经历</el-button>
+                            <el-divider v-if="idx < form.experiences.length - 1" border-style="dashed" />
                         </div>
-                    </div>
-                </div>
-            </el-card>
-        </div>
-
-        <!-- 右侧：智能匹配 (仅在非编辑模式下显示) -->
-        <div v-if="!isEditing" class="right-panel">
-            <div class="panel-header">
-                <h3>智能人岗匹配 (Top Matches)</h3>
-                <el-alert title="已为您筛选出最匹配的岗位，按分数降序排列" type="success" :closable="false" />
-            </div>
-
-            <div v-loading="matchLoading" class="match-list">
-                <el-empty v-if="!matches.length" description="暂无匹配岗位" />
-                
-                <el-card v-for="match in matches" :key="match.job.id" class="match-card mb-20" shadow="hover">
-                    <div class="match-header">
-                        <div class="job-title">
-                            <h4>{{ match.job.title }}</h4>
-                            <span class="company-tag">{{ match.job.city }} | {{ match.job.salary_range }}</span>
-                        </div>
-                        <div class="score-badge" :class="getScoreClass(match.score)">
-                            {{ match.score }}分
-                        </div>
-                    </div>
-                    
-                    <div class="match-analysis mt-2">
-                         <!-- 硬性匹配分析 -->
-                         <div v-if="match.calculate_reason" class="analysis-section">
-                             <div class="reason-title">📊 硬性指标 ({{ match.calculate_score }}分)</div>
-                             <div class="reason-content">{{ match.calculate_reason }}</div>
-                         </div>
-                         
-                         <!-- LLM 匹配分析 -->
-                         <div class="analysis-section mt-2">
-                             <div class="reason-title">
-                                🤖 AI 评价 
-                                <span v-if="match.llm_score">({{ match.llm_score }}分)</span>
-                                <span v-else class="text-gray-400 text-xs">(分析中...)</span>
-                             </div>
-                             <div v-if="match.llm_reason" class="reason-content">{{ match.llm_reason }}</div>
-                             <div v-else class="loading-ai">
-                                <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读...
-                             </div>
-                         </div>
-                    </div>
-                    
-                    <div class="card-footer">
-                        <el-button type="primary" link @click="$router.push(`/jobs/${match.job.id}`)">查看详情</el-button>
+                        <el-button v-if="isEditing" class="mt-4 w-100 dashed-btn" @click="addExperience">+ 添加工作经历</el-button>
                     </div>
                 </el-card>
             </div>
+
+            <!-- 右侧：智能匹配 (仅在开启显示时显示) -->
+            <div v-if="showMatches && !isEditing" class="matches-section" style="width: 400px; flex-shrink: 0;">
+                <div class="panel-header">
+                    <h3>智能人岗匹配 (Top Matches)</h3>
+                    <el-alert title="已为您筛选出最匹配的岗位，按分数降序排列" type="success" :closable="false" />
+                </div>
+
+                <div v-loading="matchLoading" class="match-list">
+                    <el-empty v-if="!matches.length" description="暂无匹配岗位" />
+                    
+                    <el-card v-for="match in matches" :key="match.job.id" class="match-card mb-20" shadow="hover">
+                        <div class="match-header">
+                            <div class="job-title">
+                                <h4>{{ match.job.title }}</h4>
+                                <span class="company-tag">{{ match.job.city }} | {{ match.job.salary_range }}</span>
+                            </div>
+                            <div class="score-badge" :class="getScoreClass(match.score)">
+                                {{ match.score }}分
+                            </div>
+                        </div>
+                        
+                        <div class="match-analysis mt-2">
+                             <!-- 硬性匹配分析 -->
+                             <div v-if="match.calculate_reason" class="analysis-section">
+                                 <div class="reason-title">📊 硬性指标 ({{ match.calculate_score }}分)</div>
+                                 <div class="reason-content">{{ match.calculate_reason }}</div>
+                             </div>
+                             
+                             <!-- LLM 匹配分析 -->
+                             <div class="analysis-section mt-2">
+                                 <div class="reason-title">
+                                    🤖 AI 评价 
+                                    <span v-if="match.llm_score">({{ match.llm_score }}分)</span>
+                                    <span v-else class="text-gray-400 text-xs">(分析中...)</span>
+                                 </div>
+                                 <div v-if="match.llm_reason" class="reason-content">{{ match.llm_reason }}</div>
+                                 <div v-else class="loading-ai">
+                                    <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读...
+                                 </div>
+                             </div>
+                        </div>
+                        
+                        <div class="card-footer">
+                            <el-button type="primary" link @click="$router.push(`/jobs/${match.job.id}`)">查看详情</el-button>
+                        </div>
+                    </el-card>
+                </div>
+            </div>
+        </div>
         </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
-import { Location, Briefcase, Money, Delete, Plus, Loading } from '@element-plus/icons-vue'
+import { Delete, Plus, Loading, Edit, Check, Star } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
@@ -224,17 +349,44 @@ const metaStore = useMetaStore()
 
 const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
 
+// Custom directive for auto-focus
+const vFocus = {
+  mounted: (el: any) => {
+    // Use nextTick to ensure element is in DOM
+    nextTick(() => {
+        if (!el.isConnected) return
+        // Try standard focus first
+        if (typeof el.focus === 'function') {
+            el.focus()
+        }
+        // For Element Plus components, they might expose a focus method or input element
+        const input = el.querySelector('input, textarea')
+        if (input) {
+            input.focus()
+        }
+    })
+  }
+}
+
 // State
 const loading = ref(true)
 const matchLoading = ref(false)
 const saving = ref(false)
-const isEditing = ref(false)
+const activeField = ref<string | null>(null)
 const currentUser = ref<any>(null)
+const isCreating = ref(false)
+const isEditing = ref(false)
 
 // Data
 const resume = ref<any>(null)
 const matches = ref<any[]>([])
-const meta = computed(() => metaStore.meta)
+const meta = computed(() => ({
+    cities: metaStore.cities || [],
+    levels: metaStore.levels || [],
+    skills: metaStore.skills || [],
+    industries: metaStore.industries || [],
+    degrees: metaStore.degrees || []
+}))
 
 // Form Data (for editing)
 const form = ref<any>({
@@ -243,9 +395,11 @@ const form = ref<any>({
     expected_city_id: null,
     years_of_experience: 0,
     current_level_id: null,
+    expected_title: '',
     expected_salary_min: 0,
     expected_salary_max: 0,
     avatar_url: '',
+    avatar_id: null,
     skill_ids: [],
     educations: [],
     experiences: []
@@ -258,11 +412,76 @@ const isOwner = computed(() => {
     return currentUser.value && resume.value && currentUser.value.id === resume.value.user_id
 })
 
+const showEmptyState = computed(() => {
+    // Only for owner and when resume is not saved yet
+    if (!isOwner.value) return false
+    if (resume.value?.id) return false
+    if (isCreating.value) return false
+    return true
+})
+
+// Helpers
+const generateKey = () => Math.random().toString(36).substr(2, 9)
+const getCityName = (id: number) => meta.value.cities.find((c: any) => c.id === id)?.name
+const getDegreeName = (id: number) => meta.value.degrees.find((d: any) => d.id === id)?.name
+const getIndustryName = (id: number) => meta.value.industries.find((i: any) => i.id === id)?.name
+const getSkillNames = (ids: number[]) => {
+    if (!ids) return []
+    return ids.map(id => meta.value.skills.find((s: any) => s.id === id)?.name).filter(Boolean)
+}
+
 // Methods
 const getScoreClass = (score: number) => {
     if (score >= 80) return 'score-high'
     if (score >= 60) return 'score-mid'
     return 'score-low'
+}
+
+const startCreating = () => {
+    isCreating.value = true
+    isEditing.value = true
+    syncFormWithResume()
+}
+
+const syncFormWithResume = () => {
+    if (!resume.value) return
+    const r = resume.value
+    
+    // Map skills names to IDs if needed, but if we saved correctly, r.skills might be names
+    // The API returns names in `skills` array usually.
+    // We need to map them back to IDs for the form.
+    const skillIds = r.skills?.map((name: string) => {
+        const s = meta.value.skills.find((ms: any) => ms.name === name)
+        return s ? s.id : null
+    }).filter(Boolean) || []
+
+    form.value = {
+        id: r.id,
+        candidate_name: r.candidate_name || r.name,
+        gender: r.gender || 'M',
+        expected_city_id: meta.value.cities.find((c: any) => c.name === r.expected_city)?.id,
+        years_of_experience: r.years_of_experience || r.years,
+        current_level_id: meta.value.levels.find((l: any) => l.name === r.current_level)?.id,
+        expected_title: r.expected_title,
+        expected_salary_min: r.salary_min,
+        expected_salary_max: r.salary_max,
+        avatar_url: r.avatar_url,
+        avatar_id: r.avatar_id,
+        skill_ids: skillIds,
+        // Clone deep for arrays
+        educations: r.educations?.map((e: any) => ({
+            _key: generateKey(),
+            school: e.school,
+            degree_id: e.degree_id || e.degree?.id, 
+            major_industry_id: e.major_industry_id || e.major_industry?.id
+        })) || [],
+        experiences: r.experiences?.map((e: any) => ({
+            _key: generateKey(),
+            company_name: e.company_name,
+            industry_id: e.industry_id || e.industry?.id,
+            description: e.description
+        })) || []
+    }
 }
 
 const initData = async () => {
@@ -280,12 +499,11 @@ const initData = async () => {
         // 3. Get Resume
         let res
         if (isMyResumePage.value) {
-            if (!user) return // Should be redirected by guard
+            if (!user) return 
             res = await supabaseService.getMyResume(user.id)
             if (!res.data) {
-                // No resume yet, initialize empty for editing
-                isEditing.value = true
-                resume.value = { user_id: user.id } // Placeholder
+                // No resume yet, initialize empty
+                resume.value = { user_id: user.id } 
             } else {
                 resume.value = res.data
             }
@@ -295,6 +513,11 @@ const initData = async () => {
                 res = await supabaseService.getResumeDetail(id)
                 resume.value = res.data
             }
+        }
+
+        // Sync form if owner
+        if (isOwner.value) {
+            syncFormWithResume()
         }
 
         loading.value = false
@@ -315,13 +538,11 @@ const loadMatches = async () => {
         const res = await supabaseService.getResumeMatches(resume.value.id)
         matches.value = res.data || []
         
-        // Trigger LLM evaluation for matches missing llm_score
         matches.value.forEach(async (match) => {
             if (match.llm_score === null || match.llm_score === undefined) {
                 try {
                     const { data, error } = await supabaseService.evaluateMatch(resume.value.id, match.job.id)
                     if (!error && data && data.success) {
-                        // Update local state
                         match.llm_score = data.score
                         match.llm_reason = data.reason
                     }
@@ -336,66 +557,95 @@ const loadMatches = async () => {
 }
 
 // Edit Logic
-const startEditing = () => {
-    // Clone data to form
-    const r = resume.value
-    // Map skills names to IDs (Reverse lookup needed? Or we store IDs in resume object?)
-    // Our DTO currently only has skill names. 
-    // To support editing, we need the skill IDs.
-    // The API `getResumeDetail` now returns `resume_skills(skills(name))`.
-    // It does NOT return skill IDs directly in the easy DTO.
-    // We should probably update the DTO or the raw data access.
-    // For now, let's match names to IDs from meta.
-    const skillIds = r.skills?.map((name: string) => {
-        const s = meta.value.skills.find((ms: any) => ms.name === name)
-        return s ? s.id : null
-    }).filter(Boolean) || []
-
-    form.value = {
-        id: r.id,
-        candidate_name: r.candidate_name || r.name,
-        gender: r.gender || 'M',
-        expected_city_id: meta.value.cities.find((c: any) => c.name === r.expected_city)?.id,
-        years_of_experience: r.years_of_experience || r.years,
-        current_level_id: meta.value.levels.find((l: any) => l.name === r.current_level)?.id,
-        expected_salary_min: r.salary_min,
-        expected_salary_max: r.salary_max,
-        avatar_url: r.avatar_url,
-        skill_ids: skillIds,
-        // Clone deep for arrays
-        educations: r.educations?.map((e: any) => ({
-            school: e.school,
-            degree_id: e.degree_id || e.degree?.id, // Depends on what API returns
-            major_industry_id: e.major_industry_id || e.major_industry?.id
-        })) || [],
-        experiences: r.experiences?.map((e: any) => ({
-            company_name: e.company_name,
-            industry_id: e.industry_id || e.industry?.id,
-            description: e.description
-        })) || []
-    }
-    isEditing.value = true
+const editField = (field: string) => {
+    activeField.value = field
 }
 
-const cancelEditing = () => {
+const cancelEdit = () => {
     isEditing.value = false
-    // Reset form? Not strictly necessary as it will be overwritten on next startEditing
+    activeField.value = null
+    syncFormWithResume() // Revert changes
+}
+
+const handleSave = async () => {
+    if (!currentUser.value) return
+    saving.value = true
+    try {
+        const { data, error } = await supabaseService.saveMyResume(currentUser.value.id, form.value)
+        if (error) throw error
+        
+        // Success - update local resume data to reflect changes
+        // Instead of full reload, we can just assume success or reload quietly
+        // For simplicity and correctness, let's reload data but without loading spinner
+        const res = await supabaseService.getMyResume(currentUser.value.id)
+        if (res.data) {
+            resume.value = res.data
+            // Don't syncForm here, or it might overwrite cursor position? 
+            // Actually, after save we close edit mode, so syncing is fine.
+        }
+        // Defer closing edit mode slightly to allow component events to finish
+        setTimeout(() => {
+            activeField.value = null
+            isEditing.value = false
+        }, 0)
+    } catch (e: any) {
+        ElMessage.error('保存失败: ' + e.message)
+    } finally {
+        saving.value = false
+    }
+}
+
+const toggleEdit = () => {
+    if (isEditing.value) {
+        // Cancel edit? Or Save? Usually toggle off implies cancel or save. 
+        // Given we have a Save button, toggleEdit might be just for entering edit mode.
+        // But if used as a toggle, let's assume it enters edit mode.
+        // User requirements: "View Mode: Go to Edit button", "Edit Mode: Save button".
+        // So this function handles entering edit mode.
+        isEditing.value = true
+        syncFormWithResume() // Ensure form is fresh
+    } else {
+        isEditing.value = true
+        syncFormWithResume()
+    }
+}
+
+const showMatches = ref(false)
+const toggleMatches = () => {
+    showMatches.value = !showMatches.value
+    if (showMatches.value && matches.value.length === 0) {
+        loadMatches()
+    }
 }
 
 const addEducation = () => {
-    form.value.educations.push({ school: '', degree_id: null, major_industry_id: null })
+    const key = generateKey()
+    form.value.educations.push({ _key: key, school: '', degree_id: null, major_industry_id: null })
+    // Auto-edit the new item
+    editField(`edu-${key}-school`)
 }
 
 const removeEducation = (index: number) => {
+    // Defer clearing activeField to avoid conflict with event bubbling
+    setTimeout(() => {
+        activeField.value = null
+    }, 0)
     form.value.educations.splice(index, 1)
+    // handleSave() removed
 }
 
 const addExperience = () => {
-    form.value.experiences.push({ company_name: '', industry_id: null, description: '' })
+    const key = generateKey()
+    form.value.experiences.push({ _key: key, company_name: '', industry_id: null, description: '' })
+    editField(`exp-${key}-company`)
 }
 
 const removeExperience = (index: number) => {
+    setTimeout(() => {
+        activeField.value = null
+    }, 0)
     form.value.experiences.splice(index, 1)
+    // handleSave() removed
 }
 
 const beforeAvatarUpload = (rawFile: any) => {
@@ -412,34 +662,28 @@ const beforeAvatarUpload = (rawFile: any) => {
 const uploadAvatar = async (options: any) => {
     if (!currentUser.value) return
     const { file } = options
+    // Just display preview for now, will upload on save
+    // But wait, el-upload http-request expects to do the upload. 
+    // If we want to defer upload to "Save" button, we need to handle file selection manually or upload to a temporary location?
+    // User asked "remove save immediately", "use Save button".
+    // Typically avatar upload is separate because it returns a URL needed for the profile.
+    // However, if we want to strict follow "use Save button", we should probably upload it then?
+    // Or we can upload it now but NOT save the resume record itself?
+    // Let's upload it to get the URL (since it's a file), update form.avatar_url, but NOT call handleSave().
+    // The user has to click Save to persist the new avatar_url to the resume record.
     try {
-        const { url, error } = await supabaseService.uploadAvatar(currentUser.value.id, file)
+        const { url, avatarId, error } = await supabaseService.uploadAvatar(currentUser.value.id, file)
         if (error) throw error
         
         form.value.avatar_url = url
-        ElMessage.success('头像上传成功')
+        form.value.avatar_id = avatarId
+        // handleSave() removed - wait for manual save
     } catch (e: any) {
         ElMessage.error('头像上传失败: ' + e.message)
     }
 }
 
-const saveResume = async () => {
-    if (!currentUser.value) return
-    saving.value = true
-    try {
-        const { data, error } = await supabaseService.saveMyResume(currentUser.value.id, form.value)
-        if (error) throw error
-        
-        ElMessage.success('保存成功')
-        isEditing.value = false
-        // Reload data
-        await initData()
-    } catch (e: any) {
-        ElMessage.error('保存失败: ' + e.message)
-    } finally {
-        saving.value = false
-    }
-}
+// Remove old saveResume method as it's replaced by handleSave
 
 onMounted(() => {
     initData()
@@ -455,6 +699,38 @@ watch(() => route.path, () => {
     max-width: 1400px;
     margin: 0 auto;
     padding: 20px;
+}
+
+.resume-card {
+    min-height: 600px;
+}
+
+.avatar-section {
+    display: flex;
+    justify-content: flex-start;
+}
+
+.info-section {
+    width: 100%;
+}
+
+.info-row {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+}
+
+.info-row .label {
+    width: 80px;
+    color: #606266;
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.info-row .value-content {
+    flex: 1;
+    min-width: 0;
 }
 .header-actions {
     display: flex;
@@ -528,17 +804,33 @@ watch(() => route.path, () => {
     opacity: 1;
 }
 
-.content-wrapper {
+.content-layout {
     display: flex;
-    gap: 20px;
-    align-items: flex-start;
+    flex-direction: column;
+    height: calc(100vh - 80px); /* Adjust based on global header height if any */
+    overflow: hidden;
 }
 
-.left-panel {
-    width: 35%; /* Slightly wider for better reading */
-    min-width: 350px;
-    transition: width 0.3s;
+.fixed-header {
+    background-color: white;
+    padding: 10px 20px;
+    border-bottom: 1px solid #eee;
+    z-index: 100;
+    flex-shrink: 0;
 }
+
+.scrollable-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+}
+
+/* Remove old actions-header styles if no longer needed or keep for reference */
+.header-content {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+/* .header-content end */
 .left-panel.full-width {
     width: 100%;
     max-width: 800px;
@@ -551,13 +843,6 @@ watch(() => route.path, () => {
 
 .resume-card {
     min-height: 500px;
-}
-
-.card-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-weight: bold;
 }
 
 .info-section {

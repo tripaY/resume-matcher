@@ -161,7 +161,6 @@ Deno.serve(async (req: Request) => {
     
     const llmData = await llmRes.json()
     let content = llmData.choices[0].message.content
-    console.log('DEBUG: LLM Raw Content:', content)
 
     // Cleanup JSON
     if (content.includes('```json')) {
