@@ -781,14 +781,32 @@ export const supabaseService = {
       
       const result = scoreData[0]
       
-      // Upsert to match_evaluations
-      const { data, error } = await supabase.from('match_evaluations').upsert({
-          resume_id: resumeId,
-          job_id: jobId,
-          calculate_score: result.calculate_score,
-          calculate_reason: result.calculate_reason,
-          score: result.calculate_score // Initially set total score to calculate score
-      }, { onConflict: 'resume_id,job_id' }).select().single()
+      // Check existing evaluation to avoid constraint errors
+      const { data: existing } = await supabase
+          .from('match_evaluations')
+          .select('id')
+          .eq('resume_id', resumeId)
+          .eq('job_id', jobId)
+          .maybeSingle()
+
+      let op
+      if (existing) {
+          op = supabase.from('match_evaluations').update({
+              calculate_score: result.calculate_score,
+              calculate_reason: result.calculate_reason,
+              score: result.calculate_score
+          }).eq('id', existing.id)
+      } else {
+          op = supabase.from('match_evaluations').insert({
+              resume_id: resumeId,
+              job_id: jobId,
+              calculate_score: result.calculate_score,
+              calculate_reason: result.calculate_reason,
+              score: result.calculate_score
+          })
+      }
+      
+      const { data, error } = await op.select().single()
       
       return { data, error }
   },
