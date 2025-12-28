@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS public.resumes (
     expected_title VARCHAR(100),
     expected_salary_min INTEGER,
     expected_salary_max INTEGER,
+    avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );

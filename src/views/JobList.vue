@@ -83,7 +83,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getJobs } from '../api'
+import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
 import type { JobDTO } from '../types/supabase'
 
@@ -109,20 +109,24 @@ const fetchData = async () => {
     try {
         const params: any = {
             ...filters,
-            skip: (currentPage.value - 1) * pageSize.value,
-            limit: pageSize.value
+            page: currentPage.value,
+            pageSize: pageSize.value
         }
+        
+        // Remove empty filters
         Object.keys(params).forEach(key => {
             if (params[key] === '' || params[key] === undefined) {
                 delete params[key]
             }
         })
         
-        const res = await getJobs(params)
+        const res = await supabaseService.getJobs(params)
+        
         if (res.error) {
             console.error(res.error)
             return
         }
+        
         tableData.value = res.data.items
         total.value = res.data.total
     } catch (e) {
@@ -157,6 +161,7 @@ const viewDetail = (id: number) => {
 }
 
 onMounted(() => {
+    metaStore.fetchMeta()
     fetchData()
 })
 </script>

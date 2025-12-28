@@ -82,7 +82,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import { getResumes } from '../api'
+import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
 import type { ResumeDTO } from '../types/supabase'
 
@@ -100,41 +100,36 @@ const filters = reactive({
     skill: '',
     industry: '',
     degree: '',
-    min_years: undefined as number | undefined
+    min_years: 0
 })
 
-const fetchData = async () => {
+const loadData = async () => {
     loading.value = true
-    try {
-        const params: any = {
-            ...filters,
-            skip: (currentPage.value - 1) * pageSize.value,
-            limit: pageSize.value
-        }
-        // 清理空值
-        Object.keys(params).forEach(key => {
-            if (params[key] === '' || params[key] === undefined) {
-                delete params[key]
-            }
-        })
-        
-        const res = await getResumes(params)
-        if (res.error) {
-            console.error(res.error)
-            return
-        }
-        tableData.value = res.data.items
-        total.value = res.data.total
-    } catch (e) {
-        console.error(e)
-    } finally {
-        loading.value = false
+    const params: any = {
+        page: currentPage.value,
+        pageSize: pageSize.value,
+        ...filters
     }
+    // Clean params
+    Object.keys(params).forEach(key => {
+        if (params[key] === '' || params[key] === 0 || params[key] === undefined) {
+            delete params[key]
+        }
+    })
+
+    const { data, error } = await supabaseService.getResumes(params)
+    if (error) {
+        console.error(error)
+    } else {
+        tableData.value = data.items
+        total.value = data.total
+    }
+    loading.value = false
 }
 
 const handleSearch = () => {
     currentPage.value = 1
-    fetchData()
+    loadData()
 }
 
 const resetFilters = () => {
@@ -143,13 +138,13 @@ const resetFilters = () => {
     filters.skill = ''
     filters.industry = ''
     filters.degree = ''
-    filters.min_years = undefined
+    filters.min_years = 0
     handleSearch()
 }
 
 const handlePageChange = (val: number) => {
     currentPage.value = val
-    fetchData()
+    loadData()
 }
 
 const viewDetail = (id: number) => {
@@ -157,7 +152,7 @@ const viewDetail = (id: number) => {
 }
 
 onMounted(() => {
-    fetchData()
+    loadData()
 })
 </script>
 

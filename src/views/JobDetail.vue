@@ -44,7 +44,10 @@
         <!-- 右侧：智能岗人匹配 -->
         <div class="right-panel">
             <div class="panel-header">
-                <h3>推荐候选人 (Top Candidates)</h3>
+                <div class="ph-title">
+                    <h3>推荐候选人 (Top Candidates)</h3>
+                    <el-button v-if="isAdmin" type="primary" size="small" :loading="matching" @click="runMatching">重新计算匹配</el-button>
+                </div>
                 <el-alert title="已为您筛选出最匹配的候选人，按分数降序排列" type="success" :closable="false" />
             </div>
 
@@ -101,10 +104,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { getJobDetail, getJobMatches } from '../api'
+import { supabaseService } from '../api/supabaseService'
 import { Location, Money, User, Timer, School } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 
 const route = useRoute()
 const jobId = Number(route.params.id)
@@ -113,6 +117,9 @@ const loading = ref(true)
 const matchLoading = ref(true)
 const job = ref<any>(null)
 const matches = ref<any[]>([])
+const currentUser = ref<any>(null)
+const isAdmin = ref(false)
+const matching = ref(false)
 
 const getScoreClass = (score: number) => {
     if (score >= 80) return 'score-high'
@@ -122,27 +129,66 @@ const getScoreClass = (score: number) => {
 
 const getHighestDegree = (resume: any) => {
     if (!resume.educations || !resume.educations.length) return '无'
-    return resume.educations[0].degree // 假设第一个是最高学历
+    const edu = resume.educations[0]
+    // Handle both transformed and raw structure just in case
+    return edu?.degrees?.name || edu?.degree || '无'
 }
 
 const initData = async () => {
     try {
-        const res = await getJobDetail(jobId)
+        const res = await supabaseService.getJobDetail(jobId)
         job.value = res.data
         loading.value = false
         
-        // Load matches
-        const matchRes = await getJobMatches(jobId)
-        matches.value = matchRes.data.matches
+        loadMatches()
     } catch (e) {
         console.error(e)
     } finally {
         loading.value = false
-        matchLoading.value = false
     }
 }
 
-onMounted(() => {
+const loadMatches = async () => {
+    matchLoading.value = true
+    const matchRes = await supabaseService.getJobMatches(jobId)
+    if (matchRes.data) {
+        matches.value = matchRes.data
+    }
+    matchLoading.value = false
+}
+
+const runMatching = async () => {
+    if (!isAdmin.value) return
+    matching.value = true
+    try {
+        // 1. Get all resumes
+        const { data: resumesData } = await supabaseService.getResumes({ page: 1, pageSize: 100 })
+        const resumes = resumesData.items
+        
+        // 2. Run match
+        let successCount = 0
+        for (const resume of resumes) {
+            const { error } = await supabaseService.runMatch(resume.id, jobId)
+            if (!error) successCount++
+        }
+        ElMessage.success(`匹配计算完成，成功匹配 ${successCount} 份简历`)
+        loadMatches()
+    } catch (e) {
+        console.error(e)
+        ElMessage.error('匹配计算出错')
+    } finally {
+        matching.value = false
+    }
+}
+
+onMounted(async () => {
+    const { data: { user } } = await supabaseService.getUser()
+    if (user) {
+        currentUser.value = user
+        if (user.user_metadata?.role === 'admin') {
+            isAdmin.value = true
+        }
+    }
     initData()
 })
 </script>
@@ -169,6 +215,16 @@ onMounted(() => {
 }
 .right-panel {
     flex: 1;
+}
+
+.ph-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+.ph-title h3 {
+    margin: 0;
 }
 
 .job-info h2 { margin-top: 0; }

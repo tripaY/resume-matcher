@@ -63,8 +63,30 @@ export interface Resume {
   expected_title: string | null
   expected_salary_min: number | null
   expected_salary_max: number | null
+  avatar_url?: string | null
   created_at?: string
   updated_at?: string
+}
+
+export interface Experience {
+  id: number
+  resume_id: number
+  company_name: string
+  industry_id: number | null
+  description: string | null
+  // Helper for UI
+  industry?: Industry | null
+}
+
+export interface Education {
+  id: number
+  resume_id: number
+  school: string
+  major_industry_id: number | null
+  degree_id: number | null
+  // Helper for UI
+  degree?: Degree | null
+  major_industry?: Industry | null
 }
 
 // Frontend Display Models (DTOs) - Kept for View compatibility
@@ -100,7 +122,8 @@ export interface ResumeDTO {
   degree: string
   gender?: string
   avatar_url?: string | null // Computed from Profile
-  educations?: any[]
+  educations?: Education[]
+  experiences?: Experience[]
 }
 
 export interface MetaData {

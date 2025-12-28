@@ -38,7 +38,16 @@ export const transformResume = (resume: any): ResumeDTO => {
     salary_max: resume.expected_salary_max,
     skills: resume.resume_skills?.map((rs: any) => rs.skills?.name).filter(Boolean) || [],
     degree: resume.educations?.[0]?.degrees?.name || 'Unknown',
-    educations: resume.educations // Keep raw for details view if needed
+    avatar_url: resume.avatar_url || null,
+    educations: resume.educations?.map((edu: any) => ({
+      ...edu,
+      degree: edu.degrees,
+      major_industry: edu.industries // Assuming join alias or direct mapping
+    })) || [],
+    experiences: resume.experiences?.map((exp: any) => ({
+      ...exp,
+      industry: exp.industries
+    })) || []
   }
 }
 
@@ -96,9 +105,19 @@ export const supabaseService = {
     return await supabase.auth.getUser()
   },
 
+  // Get User Profile (Role)
+  async getUserProfile(userId: string): Promise<{ data: any, error: any }> {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single()
+    return { data, error }
+  },
+
   // --- META (Admin) ---
   // Get Meta Data for filters
-  async getMeta(): Promise<{ data: MetaData | null, error: any }> {
+  async getMeta(): Promise<{ data: any, error: any }> {
     try {
       const [cities, levels, skills, industries, degrees] = await Promise.all([
         supabase.from('cities').select('id, name'),
@@ -122,26 +141,6 @@ export const supabaseService = {
       console.error('Error fetching meta:', error)
       return { data: null, error }
     }
-  },
-
-  async updateDimension(table: string, action: 'add' | 'update' | 'delete', payload: any): Promise<{ data: any, error: any }> {
-      // payload = { name: '...' } for add
-      // payload = { id: ..., name: '...' } for update
-      // payload = { id: ... } for delete
-      
-      let query
-      if (action === 'add') {
-          query = supabase.from(table).insert([{ name: payload.name }]).select()
-      } else if (action === 'update') {
-          query = supabase.from(table).update({ name: payload.name }).eq('id', payload.id).select()
-      } else if (action === 'delete') {
-          query = supabase.from(table).delete().eq('id', payload.id).select()
-      } else {
-          return { data: null, error: new Error('Invalid action') }
-      }
-      
-      const { data, error } = await query
-      return { data, error }
   },
 
   // --- JOBS ---
@@ -240,18 +239,61 @@ export const supabaseService = {
 
   // Admin: Create Job
   async createJob(jobData: any): Promise<{ data: any, error: any }> {
+      const { skill_ids, ...jobFields } = jobData
+      
       const { data, error } = await supabase
         .from('jobs')
-        .insert([jobData])
+        .insert([jobFields])
         .select()
-      return { data, error }
+        .single()
+        
+      if (error) return { data: null, error }
+      
+      if (skill_ids && skill_ids.length > 0) {
+          const skills = skill_ids.map((sid: number) => ({
+              job_id: data.id,
+              skill_id: sid,
+              is_required: true
+          }))
+          await supabase.from('job_skills').insert(skills)
+      }
+      
+      return { data, error: null }
   },
 
   // Admin: Update Job
   async updateJob(id: number, jobData: any): Promise<{ data: any, error: any }> {
+      const { skill_ids, ...jobFields } = jobData
+      
       const { data, error } = await supabase
         .from('jobs')
-        .update(jobData)
+        .update(jobFields)
+        .eq('id', id)
+        .select()
+        .single()
+        
+      if (error) return { data: null, error }
+      
+      if (skill_ids) {
+          await supabase.from('job_skills').delete().eq('job_id', id)
+          if (skill_ids.length > 0) {
+              const skills = skill_ids.map((sid: number) => ({
+                  job_id: id,
+                  skill_id: sid,
+                  is_required: true
+              }))
+              await supabase.from('job_skills').insert(skills)
+          }
+      }
+      
+      return { data, error: null }
+  },
+
+  // Admin: Delete Job
+  async deleteJob(id: number): Promise<{ data: any, error: any }> {
+      const { data, error } = await supabase
+        .from('jobs')
+        .delete()
         .eq('id', id)
         .select()
       return { data, error }
@@ -395,7 +437,8 @@ export const supabaseService = {
         cities(name),
         career_levels(name),
         resume_skills(skills(name)),
-        educations(degrees(name))
+        educations(*, degrees(name)),
+        experiences(*, industries(name))
       `)
       .eq('id', id)
       .single()
@@ -413,7 +456,8 @@ export const supabaseService = {
         cities(name),
         career_levels(name),
         resume_skills(skills(name)),
-        educations(degrees(name))
+        educations(*, degrees(name)),
+        experiences(*, industries(name))
        `)
        .eq('user_id', userId) 
        .single()
@@ -422,32 +466,94 @@ export const supabaseService = {
      return { data: transformResume(data), error: null }
   },
 
-  // User: Update My Resume
-  async updateMyResume(userId: string, resumeData: any): Promise<{ data: any, error: any }> {
-      // Check if exists
-      const { data: existing } = await supabase.from('resumes').select('id').eq('user_id', userId).single()
-      
-      if (existing) {
-          const { data, error } = await supabase
-            .from('resumes')
-            .update(resumeData)
-            .eq('user_id', userId)
-            .select()
-          return { data, error }
-      } else {
-          const { data, error } = await supabase
-            .from('resumes')
-            .insert([{ ...resumeData, user_id: userId }])
-            .select()
-          return { data, error }
+  // User: Update My Resume (Full Save)
+  async saveMyResume(userId: string, resumeData: any): Promise<{ data: any, error: any }> {
+      // 1. Upsert Resume Main Info
+      const mainInfo = {
+          user_id: userId,
+          candidate_name: resumeData.candidate_name,
+          gender: resumeData.gender,
+          expected_city_id: resumeData.expected_city_id,
+          years_of_experience: resumeData.years_of_experience,
+          current_level_id: resumeData.current_level_id,
+          expected_title: resumeData.expected_title,
+          expected_salary_min: resumeData.expected_salary_min,
+          expected_salary_max: resumeData.expected_salary_max,
+          avatar_url: resumeData.avatar_url
       }
+
+      // Check if exists to determine ID
+      let resumeId = resumeData.id
+      if (!resumeId) {
+          const { data: existing } = await supabase.from('resumes').select('id').eq('user_id', userId).single()
+          if (existing) resumeId = existing.id
+      }
+
+      let resultData = null
+
+      if (resumeId) {
+          const { data, error: upError } = await supabase.from('resumes').update(mainInfo).eq('id', resumeId).select().single()
+          if (upError) return { data: null, error: upError }
+          resultData = data
+      } else {
+          const { data, error: inError } = await supabase.from('resumes').insert([mainInfo]).select().single()
+          if (inError) return { data: null, error: inError }
+          resultData = data
+          resumeId = data.id
+      }
+
+      // 2. Handle Skills (if provided)
+      if (resumeData.skill_ids) {
+          // Delete old
+          await supabase.from('resume_skills').delete().eq('resume_id', resumeId)
+          // Insert new
+          if (resumeData.skill_ids.length > 0) {
+              const skillsToInsert = resumeData.skill_ids.map((sid: number) => ({
+                  resume_id: resumeId,
+                  skill_id: sid
+              }))
+              await supabase.from('resume_skills').insert(skillsToInsert)
+          }
+      }
+
+      // 3. Handle Educations (if provided)
+      if (resumeData.educations) {
+          // Delete old (simplest strategy)
+          await supabase.from('educations').delete().eq('resume_id', resumeId)
+          // Insert new
+          if (resumeData.educations.length > 0) {
+             const edus = resumeData.educations.map((e: any) => ({
+                 resume_id: resumeId,
+                 school: e.school,
+                 major_industry_id: e.major_industry_id,
+                 degree_id: e.degree_id
+             }))
+             await supabase.from('educations').insert(edus)
+          }
+      }
+
+      // 4. Handle Experiences (if provided)
+      if (resumeData.experiences) {
+          await supabase.from('experiences').delete().eq('resume_id', resumeId)
+          if (resumeData.experiences.length > 0) {
+              const exps = resumeData.experiences.map((e: any) => ({
+                  resume_id: resumeId,
+                  company_name: e.company_name,
+                  industry_id: e.industry_id,
+                  description: e.description
+              }))
+              await supabase.from('experiences').insert(exps)
+          }
+      }
+
+      return { data: resultData, error: null }
   },
 
   // User: Upload Avatar
   async uploadAvatar(userId: string, file: File): Promise<{ url: string | null, error: any }> {
       const fileName = `avatar-${Date.now()}-${file.name}`
       // 1. Upload file
-      const { data: uploadData, error } = await supabase.storage
+      const { error } = await supabase.storage
         .from('avatars')
         .upload(fileName, file)
 
@@ -469,6 +575,8 @@ export const supabaseService = {
       // Note: profiles table is created via trigger on auth.users, so it should exist.
       if (avatarId) {
           await supabase.from('profiles').update({ avatar_id: avatarId }).eq('id', userId)
+          // Also update resumes if exists
+          await supabase.from('resumes').update({ avatar_url: publicUrl }).eq('user_id', userId)
       }
       
       return { url: publicUrl, error: null }
@@ -602,5 +710,47 @@ export const supabaseService = {
       body: { type, count }
     })
     return { data, error }
+  },
+
+  // --- DIMENSIONS (Admin) ---
+  async createDimension(table: 'industries' | 'skills' | 'cities', name: string): Promise<{ data: any, error: any }> {
+      const { data, error } = await supabase.from(table).insert([{ name }]).select().single()
+      return { data, error }
+  },
+  
+  async updateDimension(table: 'industries' | 'skills' | 'cities', id: number, name: string): Promise<{ data: any, error: any }> {
+      const { data, error } = await supabase.from(table).update({ name }).eq('id', id).select().single()
+      return { data, error }
+  },
+  
+  async deleteDimension(table: 'industries' | 'skills' | 'cities', id: number): Promise<{ error: any }> {
+      const { error } = await supabase.from(table).delete().eq('id', id)
+      return { error }
+  },
+
+  // --- MATCH CALCULATION ---
+  async runMatch(resumeId: number, jobId: number): Promise<{ data: any, error: any }> {
+      // Call RPC
+      const { data: scoreData, error: rpcError } = await supabase.rpc('calculate_match_score', {
+          p_resume_id: resumeId,
+          p_job_id: jobId
+      })
+      
+      if (rpcError) return { data: null, error: rpcError }
+      
+      if (!scoreData || scoreData.length === 0) return { data: null, error: 'No score returned' }
+      
+      const result = scoreData[0]
+      
+      // Upsert to match_evaluations
+      const { data, error } = await supabase.from('match_evaluations').upsert({
+          resume_id: resumeId,
+          job_id: jobId,
+          score: result.total_score,
+          reason: JSON.stringify(result.details),
+          is_valid: true
+      }, { onConflict: 'resume_id,job_id' }).select().single()
+      
+      return { data, error }
   }
 }
