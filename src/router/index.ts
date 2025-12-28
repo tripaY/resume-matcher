@@ -97,7 +97,10 @@ router.beforeEach(async (to, _from, next) => {
   } else if ((to.path === '/' || to.path === '/dashboard-redirect') && user) {
      // Handle root redirect based on role
      const { data: profile } = await supabaseService.getUserProfile(user.id)
-     const role = user.user_metadata?.role || (profile ? (profile.role || profile.role_id) : 'user')
+     const dbRole = profile ? (profile.role || profile.role_id) : null
+     const metaRole = user.user_metadata?.role
+     const role = dbRole || metaRole || 'user'
+
      if (role === 'admin') {
          next('/admin/dashboard')
      } else {
@@ -106,8 +109,9 @@ router.beforeEach(async (to, _from, next) => {
   } else if (to.path.startsWith('/admin') && user) {
     // Check role
     const { data: profile } = await supabaseService.getUserProfile(user.id)
-    // Also check metadata as fallback or primary if we set it there
-    const role = user.user_metadata?.role || (profile ? (profile.role || profile.role_id) : 'user')
+    const dbRole = profile ? (profile.role || profile.role_id) : null
+    const metaRole = user.user_metadata?.role
+    const role = dbRole || metaRole || 'user'
     
     if (role !== 'admin') {
        next('/my-resume')

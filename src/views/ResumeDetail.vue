@@ -281,105 +281,96 @@
                     </div>
                 </el-card>
             </div>
+        </div>
+        </div>
 
-            <!-- 右侧：智能匹配 (仅在开启显示时显示) -->
-            <div v-if="showMatches && !isEditing" class="matches-section" style="width: 400px; flex-shrink: 0;">
-                <div class="panel-header">
-                    <h3>智能人岗匹配 (Top Matches)</h3>
-                    <el-alert title="已为您筛选出最匹配的岗位，按分数降序排列" type="success" :closable="false" />
-                </div>
-
-                <div v-loading="matchLoading" class="match-list">
-                    <el-empty v-if="!matches.length" description="暂无匹配岗位" />
-                    
-                    <el-card v-for="match in matches" :key="match.job.id" class="match-card mb-20" shadow="hover">
-                        <div class="match-header">
-                            <div class="job-title">
-                                <h4>{{ match.job.title }}</h4>
-                                <span class="company-tag">{{ match.job.city }} | {{ match.job.salary_range }}</span>
+        <!-- Job Matches Dialog -->
+        <el-dialog v-model="showMatchDialog" title="智能岗位匹配" width="80%" destroy-on-close>
+            <div class="match-dialog-content">
+                <el-table :data="matchTableData" v-loading="matchTableLoading" stripe>
+                    <el-table-column prop="id" label="ID" width="80" />
+                    <el-table-column prop="title" label="职位名称" width="180" />
+                    <el-table-column prop="city" label="城市" width="100" />
+                    <el-table-column label="匹配度" width="120" sortable prop="match_score">
+                        <template #default="scope">
+                            <span :class="getScoreClass(scope.row.match_score)">{{ scope.row.match_score }}分</span>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="匹配分析" min-width="200">
+                        <template #default="scope">
+                            <div v-if="scope.row.match_info.calculate_reason" class="text-xs text-gray-500 line-clamp-2">
+                                {{ scope.row.match_info.calculate_reason }}
                             </div>
-                            <div class="score-badge" :class="getScoreClass(match.score)">
-                                {{ match.score }}分
+                            <div v-if="scope.row.match_info.llm_score" class="text-xs text-blue-500 mt-1">
+                                AI: {{ scope.row.match_info.llm_score }}分
                             </div>
-                        </div>
-                        
-                        <div class="match-analysis mt-2">
-                             <!-- 硬性匹配分析 -->
-                             <div v-if="match.calculate_reason" class="analysis-section">
-                                 <div class="reason-title">📊 硬性指标 ({{ match.calculate_score }}分)</div>
-                                 <div class="reason-content">{{ match.calculate_reason }}</div>
-                             </div>
-                             
-                             <!-- LLM 匹配分析 -->
-                             <div class="analysis-section mt-2">
-                                 <div class="reason-title">
-                                    🤖 AI 评价 
-                                    <span v-if="match.llm_score">({{ match.llm_score }}分)</span>
-                                    <span v-else class="text-gray-400 text-xs">(分析中...)</span>
-                                 </div>
-                                 <div v-if="match.llm_reason" class="reason-content">{{ match.llm_reason }}</div>
-                                 <div v-else class="loading-ai">
-                                    <el-icon class="is-loading"><Loading /></el-icon> AI 正在深度解读...
-                                 </div>
-                             </div>
-                        </div>
-                        
-                        <div class="card-footer">
-                            <el-button type="primary" link @click="$router.push(`/jobs/${match.job.id}`)">查看详情</el-button>
-                        </div>
-                    </el-card>
+                            <div v-else class="text-xs text-gray-400 mt-1 italic">
+                                 AI 分析中...
+                            </div>
+                        </template>
+                    </el-table-column>
+                    <el-table-column label="薪资范围" width="150">
+                         <template #default="scope">
+                             {{ scope.row.salary_min }} - {{ scope.row.salary_max }}
+                         </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="100" fixed="right">
+                        <template #default="scope">
+                            <el-button type="primary" size="small" @click="viewJobDetail(scope.row.id)">详情</el-button>
+                        </template>
+                    </el-table-column>
+                </el-table>
+                
+                <div class="pagination mt-4 flex justify-end">
+                    <el-pagination
+                        v-model:current-page="matchPage"
+                        v-model:page-size="matchPageSize"
+                        :page-sizes="[5, 10, 20]"
+                        :total="matchTotal"
+                        layout="total, sizes, prev, pager, next, jumper"
+                        @size-change="handleMatchSizeChange"
+                        @current-change="handleMatchPageChange"
+                    />
                 </div>
             </div>
-        </div>
-        </div>
+        </el-dialog>
     </div>
+
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, onMounted, computed, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
-import { Delete, Plus, Loading, Edit, Check, Star } from '@element-plus/icons-vue'
+import { Delete, Plus } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
+const router = useRouter()
 const metaStore = useMetaStore()
 
 const defaultAvatar = 'https://cube.elemecdn.com/3/7c/3ea6beec64369c2642b92c6726f1epng.png'
 
-// Custom directive for auto-focus
-const vFocus = {
-  mounted: (el: any) => {
-    // Use nextTick to ensure element is in DOM
-    nextTick(() => {
-        if (!el.isConnected) return
-        // Try standard focus first
-        if (typeof el.focus === 'function') {
-            el.focus()
-        }
-        // For Element Plus components, they might expose a focus method or input element
-        const input = el.querySelector('input, textarea')
-        if (input) {
-            input.focus()
-        }
-    })
-  }
-}
-
 // State
 const loading = ref(true)
-const matchLoading = ref(false)
 const saving = ref(false)
 const activeField = ref<string | null>(null)
 const currentUser = ref<any>(null)
 const isCreating = ref(false)
 const isEditing = ref(false)
 
+// Match Dialog State
+const showMatchDialog = ref(false)
+const matchTableData = ref<any[]>([])
+const matchTableLoading = ref(false)
+const matchPage = ref(1)
+const matchPageSize = ref(10)
+const matchTotal = ref(0)
+
 // Data
 const resume = ref<any>(null)
-const matches = ref<any[]>([])
 const meta = computed(() => ({
     cities: metaStore.cities || [],
     levels: metaStore.levels || [],
@@ -389,7 +380,11 @@ const meta = computed(() => ({
 }))
 
 // Form Data (for editing)
-const form = ref<any>({
+const form = ref<{
+    educations: any[];
+    experiences: any[];
+    [key: string]: any;
+}>({
     candidate_name: '',
     gender: 'M',
     expected_city_id: null,
@@ -521,11 +516,6 @@ const initData = async () => {
         }
 
         loading.value = false
-
-        // 4. Get Matches (if exists)
-        if (resume.value && resume.value.id) {
-            loadMatches()
-        }
     } catch (e) {
         console.error(e)
         loading.value = false
@@ -533,26 +523,44 @@ const initData = async () => {
 }
 
 const loadMatches = async () => {
-    matchLoading.value = true
+    if (!resume.value?.id) return
+    
+    matchTableLoading.value = true
     try {
-        const res = await supabaseService.getResumeMatches(resume.value.id)
-        matches.value = res.data || []
+        // Ensure matches exist (calculate if needed)
+        await supabaseService.ensureMatchEvaluations(resume.value.id)
         
-        matches.value.forEach(async (match) => {
-            if (match.llm_score === null || match.llm_score === undefined) {
+        // Fetch paginated matches
+        const { data, error } = await supabaseService.getJobsForResume(resume.value.id, {
+            page: matchPage.value,
+            pageSize: matchPageSize.value
+        })
+        
+        if (error) throw error
+        
+        matchTableData.value = data.items
+        matchTotal.value = data.total
+        
+        // Trigger AI evaluation for displayed items if missing
+        matchTableData.value.forEach(async (item) => {
+            if (!item.match_info.llm_score) {
                 try {
-                    const { data, error } = await supabaseService.evaluateMatch(resume.value.id, match.job.id)
-                    if (!error && data && data.success) {
-                        match.llm_score = data.score
-                        match.llm_reason = data.reason
+                    const { data: aiData, error: aiError } = await supabaseService.evaluateMatch(resume.value.id, item.id)
+                    if (!aiError && aiData) {
+                         // Update local item
+                         item.match_info.llm_score = aiData.llm_score
+                         item.match_info.llm_reason = aiData.llm_reason
                     }
                 } catch (e) {
-                    console.error('Failed to evaluate match', e)
+                    console.error('AI evaluation failed for job ' + item.id, e)
                 }
             }
         })
+        
+    } catch (e: any) {
+        ElMessage.error('加载匹配数据失败: ' + e.message)
     } finally {
-        matchLoading.value = false
+        matchTableLoading.value = false
     }
 }
 
@@ -571,7 +579,7 @@ const handleSave = async () => {
     if (!currentUser.value) return
     saving.value = true
     try {
-        const { data, error } = await supabaseService.saveMyResume(currentUser.value.id, form.value)
+        const { error } = await supabaseService.saveMyResume(currentUser.value.id, form.value)
         if (error) throw error
         
         // Success - update local resume data to reflect changes
@@ -610,12 +618,24 @@ const toggleEdit = () => {
     }
 }
 
-const showMatches = ref(false)
 const toggleMatches = () => {
-    showMatches.value = !showMatches.value
-    if (showMatches.value && matches.value.length === 0) {
-        loadMatches()
-    }
+    showMatchDialog.value = true
+    loadMatches()
+}
+
+const handleMatchSizeChange = (val: number) => {
+    matchPageSize.value = val
+    matchPage.value = 1
+    loadMatches()
+}
+
+const handleMatchPageChange = (val: number) => {
+    matchPage.value = val
+    loadMatches()
+}
+
+const viewJobDetail = (jobId: number) => {
+    router.push(`/jobs/${jobId}`)
 }
 
 const addEducation = () => {

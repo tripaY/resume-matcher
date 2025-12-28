@@ -5,7 +5,7 @@
         <div class="logo-wrapper" :class="{ 'collapsed': isCollapse }">
           <div class="logo-content" style="display: flex; align-items: center; justify-content: center; width: 100%; position: relative;">
             <div class="collapse-btn" @click="toggleCollapse">
-                <el-icon><component :is="isCollapse ? 'Expand' : 'Fold'" /></el-icon>
+                <el-icon><component :is="isCollapse ? Expand : Fold" /></el-icon>
             </div>
             <img src="https://element-plus.org/images/element-plus-logo.svg" alt="Logo" class="logo-img" style="height: 20px; filter: brightness(0) invert(1);" />
           </div>
@@ -62,7 +62,7 @@
                 <span v-else class="user-label" :title="username">求职者：{{ username || '用户' }}</span>
             </div>
             <el-tooltip content="退出登录" placement="top" :show-after="500">
-                <div class="logout-icon-btn" @click="handleLogout" :title="null">
+                <div class="logout-icon-btn" @click="handleLogout" :title="undefined">
                     <el-icon :class="{ 'is-loading': loggingOut }">
                         <Loading v-if="loggingOut" />
                         <SwitchButton v-else />
@@ -92,7 +92,7 @@ import { computed, ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { 
-  User, Briefcase, Setting, Search, Document, Star, 
+  User, Briefcase, Setting, Search, Document, 
   SwitchButton, Expand, Fold, Loading, Odometer
 } from '@element-plus/icons-vue'
 
@@ -141,9 +141,6 @@ const activePath = computed(() => {
   return route.path
 })
 
-const currentPageTitle = computed(() => {
-  return route.meta.title || 'Resume Matcher'
-})
 </script>
 
 <style scoped>

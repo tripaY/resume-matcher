@@ -52,7 +52,7 @@ const editName = ref('')
 
 const loadData = async () => {
     loading.value = true
-    const { data, error } = await supabase.from(props.table).select('*').order('id')
+    const { data } = await supabase.from(props.table).select('*').order('id')
     if (data) {
         items.value = data
     }
@@ -63,7 +63,7 @@ const handleAdd = async () => {
     if (!newItemName.value.trim()) return
     
     // 
-    const { data, error } = await supabaseService.createDimension(props.table, newItemName.value.trim())
+    const { error } = await supabaseService.createDimension(props.table, newItemName.value.trim())
     if (error) {
         ElMessage.error('添加失败')
     } else {

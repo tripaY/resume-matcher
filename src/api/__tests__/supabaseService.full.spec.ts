@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { supabaseService } from '../supabaseService'
 
 // Helper for random string
@@ -8,7 +8,6 @@ describe('Supabase Service Full Integration Test', () => {
     // Shared State
     let adminUser: any = null
     let candidateUser: any = null
-    let candidateEmail: string = ''
     let createdJobId: number | null = null
     let createdResumeId: number | null = null
     let createdSkillId: number | null = null
@@ -125,12 +124,11 @@ describe('Supabase Service Full Integration Test', () => {
             expect(error).toBeNull()
             expect(user).toBeDefined()
             candidateUser = user
-            candidateEmail = user?.email || ''
         })
 
         it('Get My Resume (Empty)', async () => {
             if (!candidateUser) throw new Error('No candidate user')
-            const { data, error } = await supabaseService.getMyResume(candidateUser.id)
+            const { data } = await supabaseService.getMyResume(candidateUser.id)
             if (data) {
                 console.log('Resume already exists (unexpected for new random user)')
             } else {

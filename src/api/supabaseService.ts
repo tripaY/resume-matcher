@@ -583,7 +583,7 @@ export const supabaseService = {
   },
 
   // User: Upload Avatar
-  async uploadAvatar(userId: string, file: File): Promise<{ url: string | null, avatarId: string | null, error: any }> {
+  async uploadAvatar(_userId: string, file: File): Promise<{ url: string | null, avatarId: string | null, error: any }> {
       const fileName = `avatar-${Date.now()}-${file.name}`
       // 1. Upload file
       const { error } = await supabase.storage
@@ -765,6 +765,94 @@ export const supabaseService = {
   },
 
   // --- MATCH CALCULATION ---
+  // Ensure Match Evaluations exist for all jobs
+  async ensureMatchEvaluations(resumeId: number): Promise<{ error: any }> {
+      // 1. Get all valid job IDs
+      const { data: allJobs, error: jobError } = await supabase.from('jobs').select('id')
+      if (jobError) return { error: jobError }
+      
+      const allJobIds = allJobs.map(j => j.id)
+      if (allJobIds.length === 0) return { error: null }
+
+      // 2. Get existing matches
+      const { data: existingMatches, error: matchError } = await supabase
+        .from('match_evaluations')
+        .select('job_id')
+        .eq('resume_id', resumeId)
+      
+      if (matchError) return { error: matchError }
+      
+      const existingJobIds = new Set(existingMatches.map(m => m.job_id))
+      
+      // 3. Find missing
+      const missingJobIds = allJobIds.filter(id => !existingJobIds.has(id))
+      
+      if (missingJobIds.length > 0) {
+          const toInsert = missingJobIds.map(jobId => ({
+              resume_id: resumeId,
+              job_id: jobId
+              // Trigger will handle calculation
+          }))
+          
+          // Batch insert
+          const { error: insertError } = await supabase.from('match_evaluations').insert(toInsert)
+          if (insertError) return { error: insertError }
+      }
+      
+      return { error: null }
+  },
+
+  // Get Jobs for Resume (Paginated with Match Info)
+  async getJobsForResume(resumeId: number, params: any = {}): Promise<{ data: { items: any[], total: number }, error: any }> {
+    let selectStr = `
+        *,
+        jobs!inner (
+            *,
+            cities(name),
+            career_levels(name),
+            degrees(name),
+            industries(name),
+            job_skills(
+                is_required,
+                skills(name)
+            )
+        )
+    `
+    
+    let query = supabase
+        .from('match_evaluations')
+        .select(selectStr, { count: 'exact' })
+        .eq('resume_id', resumeId)
+        .order('score', { ascending: false })
+        
+    // Pagination
+    let from = 0
+    let to = 19
+    if (params.page && params.pageSize) {
+        from = (params.page - 1) * params.pageSize
+        to = from + params.pageSize - 1
+    }
+    query = query.range(from, to)
+    
+    const { data, count, error } = await query
+    
+    if (error) {
+        console.error('Error fetching jobs for resume:', error)
+        return { data: { items: [], total: 0 }, error }
+    }
+    
+    const items = data.map((m: any) => {
+        const jobDto = transformJob(m.jobs)
+        return {
+            ...jobDto,
+            match_score: m.score,
+            match_info: m
+        }
+    })
+    
+    return { data: { items, total: count || 0 }, error: null }
+  },
+
   async evaluateMatch(resumeId: number, jobId: number): Promise<{ data: any, error: any }> {
       // Call RPC
       const { data: scoreData, error: rpcError } = await supabase.rpc('calculate_match_score', {

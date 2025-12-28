@@ -219,7 +219,7 @@ import { ref, reactive, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
-import { Location, Money, User, Timer, School, Loading, ArrowLeft, Right } from '@element-plus/icons-vue'
+import { Location, Timer, School, ArrowLeft, Right } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
