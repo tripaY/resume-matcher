@@ -409,7 +409,8 @@ CREATE TABLE IF NOT EXISTS public.match_evaluations (
     llm_reason TEXT,
     calculate_reason TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(resume_id, job_id)
 );
 COMMENT ON TABLE public.match_evaluations IS 'LLM 简历与职位匹配评估结果表';
 COMMENT ON COLUMN public.match_evaluations.score IS '总匹配得分 (0-100)';

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { supabaseService } from '../supabaseService'
+import { supabase } from '../../utils/supabaseClient'
 
 // REAL Integration Test
 // Requires valid .env file with VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY
@@ -157,6 +158,51 @@ describe('supabaseService Integration', () => {
     // 2. Call generateMockData for Resumes
     console.log('Generating Mock Resumes for random user...')
     const { data: resumeData, error: resumeError } = await supabaseService.generateMockData('resume', 1)
+
+    if (resumeError) {
+        console.error('Generate Resume Error:', resumeError)
+    } else {
+        console.log('Generate Resume Success:', JSON.stringify(resumeData, null, 2))
+    }
+
+    expect(resumeError).toBeNull()
+    expect(resumeData).toBeDefined()
+    expect(resumeData.success).toBe(true)
+    expect(Array.isArray(resumeData.data)).toBe(true)
+    expect(resumeData.data.length).toBeGreaterThan(0)
+    // Verify Resume structure
+    const resume = resumeData.data[0]
+    expect(resume).toHaveProperty('candidate_name')
+    expect(resume).toHaveProperty('years_of_experience')
+
+  }, 60000)
+
+  it('mockEvaluateMatch', async () => {
+    // 1. Random User
+    const username = `admin`
+    const password = `admin123`
+    
+    console.log(`Logging in as random user ${username}...`)
+    const { user, error: loginError } = await supabaseService.loginOrRegister(username, password)
+    
+    if (loginError) {
+      console.error('Login failed, skipping mock data test:', loginError)
+      return
+    }
+    
+    expect(user).toBeDefined()
+
+    // 2. Call generateMockData for Resumes
+    const {data: resumeIdData} = await supabase.from('resumes').select('id').limit(1).single()
+    expect(resumeIdData).toBeDefined()
+    expect(resumeIdData).toHaveProperty('id')
+    const resumeId = resumeIdData!.id
+    const {data: jobIdData} = await supabase.from('jobs').select('id').limit(1).single()
+    expect(jobIdData).toBeDefined()
+    expect(jobIdData).toHaveProperty('id')
+    const jobId = jobIdData!.id
+    
+    const { data: resumeData, error: resumeError } = await supabaseService.evaluateMatch(resumeId, jobId)
 
     if (resumeError) {
         console.error('Generate Resume Error:', resumeError)

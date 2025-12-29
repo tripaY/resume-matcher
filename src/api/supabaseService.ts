@@ -981,7 +981,7 @@ export const supabaseService = {
   async evaluateMatch(resumeId: number, jobId: number): Promise<{ data: any, error: any }> {
       // Call Edge Function 'evaluate-match' for LLM scoring
       const { data, error } = await supabase.functions.invoke('evaluate-match', {
-          body: { resumeId, jobId }
+          body: { resume_id: resumeId, job_id: jobId }
       })
       return { data, error }
   },
