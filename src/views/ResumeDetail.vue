@@ -24,37 +24,31 @@
             <div class="match-container" style="max-width: 1200px; margin: 0 auto;">
                 <el-table :data="matchTableData" v-loading="matchTableLoading" stripe border>
                     <el-table-column prop="id" label="ID" width="80" align="center" />
-                    <el-table-column prop="title" label="职位名称" width="200" show-overflow-tooltip />
-                    <el-table-column prop="city" label="城市" width="100" align="center" />
-                    <el-table-column label="匹配度" width="120" sortable prop="match_score" align="center">
+                    <el-table-column prop="title" label="岗位名称" width="200" show-overflow-tooltip />
+                    <el-table-column label="匹配度" width="100" sortable prop="match_score" align="center">
                         <template #default="scope">
                             <el-tag :type="getScoreType(scope.row.match_score)" effect="dark">
-                                {{ scope.row.match_score }}分
+                                {{ scope.row.match_score }}
                             </el-tag>
                         </template>
                     </el-table-column>
-                    <el-table-column label="匹配分析" min-width="300">
+                    <el-table-column label="硬性条件得分" width="120" prop="match_info.calculate_score" align="center">
                         <template #default="scope">
-                            <div v-if="scope.row.match_info.calculate_reason" class="text-sm text-gray-600 mb-2">
-                                <span class="font-bold">规则匹配:</span> {{ scope.row.match_info.calculate_reason }}
-                            </div>
-                            <div v-if="scope.row.match_info.llm_score" class="p-2 bg-blue-50 rounded">
-                                <div class="flex items-center gap-2 mb-1">
-                                    <span class="font-bold text-blue-600">AI 评分: {{ scope.row.match_info.llm_score }}</span>
-                                </div>
-                                <div class="text-xs text-gray-600 leading-relaxed">
-                                    {{ scope.row.match_info.llm_reason }}
-                                </div>
-                            </div>
-                            <div v-else class="loading-ai">
-                                <el-icon class="is-loading"><Loading /></el-icon> AI正在深度分析中...
-                            </div>
+                             {{ scope.row.match_info.calculate_score }}
                         </template>
                     </el-table-column>
-                    <el-table-column label="薪资范围" width="150" align="center">
+                    <el-table-column label="硬性条件原因" min-width="200" prop="match_info.calculate_reason" show-overflow-tooltip />
+                    <el-table-column label="LLM得分" width="100" prop="match_info.llm_score" align="center">
                          <template #default="scope">
-                             {{ scope.row.salary_min }} - {{ scope.row.salary_max }}
+                             <span v-if="scope.row.match_info.llm_score" class="font-bold text-blue-600">{{ scope.row.match_info.llm_score }}</span>
+                             <el-icon v-else class="is-loading"><Loading /></el-icon>
                          </template>
+                    </el-table-column>
+                    <el-table-column label="LLM分析" min-width="200" prop="match_info.llm_reason" show-overflow-tooltip>
+                        <template #default="scope">
+                             <span v-if="scope.row.match_info.llm_reason">{{ scope.row.match_info.llm_reason }}</span>
+                             <span v-else class="text-gray-400 text-xs">正在分析...</span>
+                        </template>
                     </el-table-column>
                     <el-table-column label="操作" width="100" fixed="right" align="center">
                         <template #default="scope">
@@ -81,19 +75,26 @@
     <div v-else key="content" class="content-layout">
         <div class="fixed-header">
              <div class="header-content flex justify-end gap-2">
-                <template v-if="isEditing">
-                    <el-button @click="cancelEdit">放弃编辑</el-button>
-                    <el-button type="primary" @click="handleSave" :loading="saving">
-                       保存
+                <template v-if="!isMyResumePage">
+                    <el-button @click="goBack">
+                        <el-icon class="mr-1"><Back /></el-icon> 返回列表
                     </el-button>
                 </template>
                 <template v-else>
-                    <el-button @click="toggleEdit">
-                       去编辑
-                    </el-button>
-                    <el-button type="success" @click="toggleMatches">
-                       智能匹配
-                    </el-button>
+                    <template v-if="isEditing">
+                        <el-button @click="cancelEdit">放弃编辑</el-button>
+                        <el-button type="primary" @click="handleSave" :loading="saving">
+                           保存
+                        </el-button>
+                    </template>
+                    <template v-else>
+                        <el-button @click="toggleEdit">
+                           去编辑
+                        </el-button>
+                        <el-button type="success" @click="toggleMatches">
+                           智能匹配
+                        </el-button>
+                    </template>
                 </template>
              </div>
         </div>
@@ -197,7 +198,7 @@
                                         />
                                         <span class="ml-2 whitespace-nowrap">年</span>
                                     </div>
-                                    <span v-else>{{ form.years_of_experience ?? resume?.years_of_experience }} 年</span>
+                                    <span v-else>{{ resume?.years_of_experience }} 年</span>
                                 </div>
                             </div>
                             
@@ -209,7 +210,7 @@
                                         <span class="separator">-</span>
                                         <el-input-number v-model="form.expected_salary_max" :min="0" placeholder="Max" :step="1000" style="width: 100%" />
                                     </div>
-                                    <span v-else>{{ form.expected_salary_min ?? resume?.expected_salary_min }} - {{ form.expected_salary_max ?? resume?.expected_salary_max }}</span>
+                                    <span v-else>{{ resume?.salary_min }} - {{ resume?.salary_max }}</span>
                                 </div>
                             </div>
                         </div>
@@ -229,14 +230,14 @@
                             </el-select>
                         </div>
                         <div v-else class="min-h-20">
-                            <el-tag v-for="s in getSkillNames(form.skill_ids)" :key="s" class="mr-2 mb-2">{{ s }}</el-tag>
-                            <span v-if="!form.skill_ids?.length" class="text-gray">暂无技能</span>
+                            <el-tag v-for="s in displaySkills" :key="s" class="mr-2 mb-2">{{ s }}</el-tag>
+                            <span v-if="!displaySkills?.length" class="text-gray">暂无技能</span>
                         </div>
                     </div>
 
                     <el-divider>教育背景</el-divider>
                     <div class="educations-section">
-                        <div v-for="(edu, idx) in form.educations" :key="edu._key || idx" class="edu-item-wrapper relative group">
+                        <div v-for="(edu, idx) in displayEducations" :key="edu._key || idx" class="edu-item-wrapper relative group">
                             <div class="item-content-group">
                                 <el-button 
                                     v-if="isEditing" 
@@ -271,7 +272,7 @@
                                         >
                                             <el-option v-for="d in meta.degrees" :key="d.id" :label="d.name" :value="d.id" />
                                         </el-select>
-                                        <span v-else class="block text-gray-600">{{ getDegreeName(edu.degree_id) || '学历' }}</span>
+                                        <span v-else class="block text-gray-600">{{ edu.degree?.name || getDegreeName(edu.degree_id) || '学历' }}</span>
                                     </div>
                                     <span v-if="!isEditing" class="text-gray-300">|</span>
                                     <div class="flex-1">
@@ -284,18 +285,18 @@
                                         >
                                             <el-option v-for="i in meta.industries" :key="i.id" :label="i.name" :value="i.id" />
                                         </el-select>
-                                        <span v-else class="block text-gray-600">{{ getIndustryName(edu.major_industry_id) || '相关专业' }}</span>
+                                        <span v-else class="block text-gray-600">{{ edu.major_industry?.name || getIndustryName(edu.major_industry_id) || '相关专业' }}</span>
                                     </div>
                                 </div>
                             </div>
-                            <el-divider v-if="idx < form.educations.length - 1" border-style="dashed" />
+                            <el-divider v-if="idx < displayEducations.length - 1" border-style="dashed" />
                         </div>
                         <el-button v-if="isEditing" class="mt-4 w-100 dashed-btn" @click="addEducation">+ 添加教育经历</el-button>
                     </div>
 
                     <el-divider>工作经历</el-divider>
                     <div class="experiences-section">
-                        <div v-for="(exp, idx) in form.experiences" :key="exp._key || idx" class="exp-item-wrapper relative group">
+                        <div v-for="(exp, idx) in displayExperiences" :key="exp._key || idx" class="exp-item-wrapper relative group">
                             <div class="item-content-group">
                                 <el-button 
                                     v-if="isEditing" 
@@ -328,7 +329,7 @@
                                         >
                                             <el-option v-for="i in meta.industries" :key="i.id" :label="i.name" :value="i.id" />
                                         </el-select>
-                                        <el-tag v-else size="small" type="info">{{ getIndustryName(exp.industry_id) || '行业' }}</el-tag>
+                                        <el-tag v-else size="small" type="info">{{ exp.industry?.name || getIndustryName(exp.industry_id) || '行业' }}</el-tag>
                                     </div>
                                 </div>
                                 
@@ -435,6 +436,28 @@ const showEmptyState = computed(() => {
     return true
 })
 
+// Display Computed (for switching between form and resume data)
+const displaySkills = computed(() => {
+    if (isEditing.value) {
+        return getSkillNames(form.value.skill_ids)
+    }
+    return resume.value?.skills || []
+})
+
+const displayEducations = computed(() => {
+    if (isEditing.value) {
+        return form.value.educations
+    }
+    return resume.value?.educations || []
+})
+
+const displayExperiences = computed(() => {
+    if (isEditing.value) {
+        return form.value.experiences
+    }
+    return resume.value?.experiences || []
+})
+
 // Helpers
 const generateKey = () => Math.random().toString(36).substr(2, 9)
 const getCityName = (id: number) => meta.value.cities.find((c: any) => c.id === id)?.name
@@ -463,6 +486,10 @@ const closeMatches = () => {
     const query = { ...route.query }
     delete query.action
     router.replace({ query })
+}
+
+const goBack = () => {
+    router.push('/resumes')
 }
 
 const toggleMatches = () => {
@@ -669,7 +696,10 @@ const handleMatchPageChange = (val: number) => {
 }
 
 const viewJobDetail = (jobId: number) => {
-    router.push(`/jobs/${jobId}`)
+    router.push({ 
+        path: `/jobs/${jobId}`,
+        query: { from: 'match', resumeId: resume.value?.id }
+    })
 }
 
 const addEducation = () => {

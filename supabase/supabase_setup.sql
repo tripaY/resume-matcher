@@ -674,6 +674,33 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
+-- 批量计算简历与职位的匹配得分
+CREATE OR REPLACE FUNCTION public.batch_calculate_match_scores(
+    p_resume_ids BIGINT[],
+    p_job_ids BIGINT[]
+)
+RETURNS TABLE (
+    resume_id BIGINT,
+    job_id BIGINT,
+    calculate_score INTEGER,
+    calculate_reason TEXT
+) AS $$
+BEGIN
+    RETURN QUERY
+    SELECT
+        r.id AS resume_id,
+        j.id AS job_id,
+        cms.calculate_score,
+        cms.calculate_reason
+    FROM
+        unnest(p_resume_ids) AS r(id)
+    CROSS JOIN
+        unnest(p_job_ids) AS j(id)
+    CROSS JOIN LATERAL
+        public.calculate_match_score(r.id, j.id) AS cms;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
+
 -- 触发器函数：当 score 更新相关字段变化时，自动计算 score
 CREATE OR REPLACE FUNCTION public.trigger_calculate_total_score()
 RETURNS TRIGGER AS $$

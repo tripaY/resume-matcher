@@ -9,7 +9,7 @@
         <div class="fixed-header">
              <div class="header-inner">
                 <div class="header-left">
-                    <el-button @click="$router.back()">
+                    <el-button @click="goBack">
                         <el-icon class="mr-1"><ArrowLeft /></el-icon> 返回列表
                     </el-button>
                 </div>
@@ -216,13 +216,14 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
 import { Location, Timer, School, ArrowLeft, Right } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 
 const route = useRoute()
+const router = useRouter()
 const jobId = Number(route.params.id)
 const metaStore = useMetaStore()
 
@@ -264,6 +265,17 @@ const getScoreClass = (score: number) => {
     if (score >= 80) return 'score-high'
     if (score >= 60) return 'score-mid'
     return 'score-low'
+}
+
+const goBack = () => {
+    if (route.query.from === 'match' && route.query.resumeId) {
+        router.push({ 
+            path: `/resumes/${route.query.resumeId}`, 
+            query: { action: 'match' } 
+        })
+    } else {
+        router.back()
+    }
 }
 
 const initData = async () => {
