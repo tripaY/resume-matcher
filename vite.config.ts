@@ -14,6 +14,6 @@ export default defineConfig({
   },
   // ✅ 2. 配置打包输出目录
   build: {
-    outDir: 'dist'
+    outDir: 'docs'
   }
 })

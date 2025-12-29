@@ -269,7 +269,7 @@ import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
-import { Back, Loading } from '@element-plus/icons-vue'
+import { Loading } from '@element-plus/icons-vue'
 import type { JobDTO } from '../types/supabase'
 
 const router = useRouter()
@@ -281,7 +281,7 @@ const currentPage = ref(1)
 const pageSize = ref(20)
 
 // Match Dialog State
-const showMatchDialog = ref(false)
+// const showMatchDialog = ref(false)
 const matchLoading = ref(false)
 const matches = ref<any[]>([])
 const currentJobId = ref<number | null>(null)
@@ -293,7 +293,7 @@ const saving = ref(false)
 const formRef = ref<FormInstance>()
 const form = ref<any>({})
 
-const validateSalary = (rule: any, value: any, callback: any) => {
+const validateSalary = (_rule: any, value: any, callback: any) => {
     if (value < form.value.salary_min) {
         callback(new Error('最高薪资不能低于最低薪资'))
     } else {

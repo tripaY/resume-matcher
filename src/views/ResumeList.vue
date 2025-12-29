@@ -163,7 +163,7 @@ import { useRouter } from 'vue-router'
 import { supabaseService } from '../api/supabaseService'
 import { useMetaStore } from '../stores/metaStore'
 import { ElMessage } from 'element-plus'
-import { Back, Loading } from '@element-plus/icons-vue'
+import { Loading } from '@element-plus/icons-vue'
 import type { ResumeDTO } from '../types/supabase'
 
 const router = useRouter()

@@ -444,14 +444,14 @@ const displaySkills = computed(() => {
     return resume.value?.skills || []
 })
 
-const displayEducations = computed(() => {
+const displayEducations = computed<any[]>(() => {
     if (isEditing.value) {
         return form.value.educations
     }
     return resume.value?.educations || []
 })
 
-const displayExperiences = computed(() => {
+const displayExperiences = computed<any[]>(() => {
     if (isEditing.value) {
         return form.value.experiences
     }
