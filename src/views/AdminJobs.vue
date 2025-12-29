@@ -88,55 +88,59 @@
         </div>
 
         <el-table :data="matches" v-loading="matchLoading" style="width: 100%" stripe border>
-            <el-table-column label="匹配度" width="100" align="center">
-                <template #default="scope">
-                     <el-progress type="circle" :percentage="scope.row.match_info?.score || 0" :width="50" :status="getScoreStatus(scope.row.match_info?.score || 0)" />
-                </template>
-            </el-table-column>
+            <el-table-column prop="id" label="ID" width="80" align="center" />
             
-            <el-table-column prop="candidate_name" label="候选人" width="120">
+            <el-table-column prop="candidate_name" label="候选人名称" width="120">
                 <template #default="scope">
                     <div class="font-bold">{{ scope.row.candidate_name }}</div>
                 </template>
             </el-table-column>
 
-            <el-table-column prop="gender" label="性别" width="80" />
-            
-            <el-table-column label="工作经验" width="120">
+            <el-table-column label="匹配度" width="100" align="center">
                 <template #default="scope">
-                    {{ scope.row.years_of_experience }}年
+                     <el-progress type="circle" :percentage="scope.row.match_info?.score || 0" :width="50" :status="getScoreStatus(scope.row.match_info?.score || 0)" />
                 </template>
             </el-table-column>
 
-            <el-table-column label="学历信息" width="180">
+            <el-table-column label="硬性条件得分" width="120" align="center">
                 <template #default="scope">
-                    <div v-for="edu in scope.row.educations" :key="edu.id" class="text-sm">
-                        {{ edu.degree?.name }} · {{ edu.school }}
+                    <span class="font-bold">{{ scope.row.match_info?.calculate_score || 0 }}</span>
+                </template>
+            </el-table-column>
+
+            <el-table-column label="硬性条件原因" min-width="200">
+                <template #default="scope">
+                    <div class="text-sm text-gray-600 line-clamp-3" :title="scope.row.match_info?.calculate_reason">
+                        {{ scope.row.match_info?.calculate_reason || '-' }}
                     </div>
                 </template>
             </el-table-column>
 
-            <el-table-column label="期望" width="180">
-                <template #default="scope">
-                    <div>{{ scope.row.expected_city }}</div>
-                    <div class="text-gray-500">{{ scope.row.salary_min }}-{{ scope.row.salary_max }}</div>
+            <el-table-column label="LLM得分" width="100" align="center">
+                 <template #default="scope">
+                    <div v-if="scope.row.match_info?.llm_score !== undefined">
+                        <el-tag size="small" effect="dark" :type="getScoreStatus(scope.row.match_info.llm_score)">
+                            {{ scope.row.match_info.llm_score }}
+                        </el-tag>
+                    </div>
+                    <div v-else class="text-gray-400">
+                        -
+                    </div>
                 </template>
             </el-table-column>
 
-            <el-table-column label="AI 匹配分析" min-width="300">
+            <el-table-column label="LLM分析" min-width="300">
                 <template #default="scope">
-                    <div v-if="scope.row.match_info?.llm_score !== undefined">
-                        <div class="mb-2">
-                             <el-tag size="small" effect="dark" :type="getScoreStatus(scope.row.match_info.llm_score)">
-                                AI评分: {{ scope.row.match_info.llm_score }}
-                            </el-tag>
-                        </div>
+                    <div v-if="scope.row.match_info?.llm_reason">
                         <div class="text-sm text-gray-600 leading-relaxed line-clamp-3" :title="scope.row.match_info.llm_reason">
                             {{ scope.row.match_info.llm_reason }}
                         </div>
                     </div>
-                    <div v-else class="text-gray-400 italic">
+                    <div v-else-if="scope.row.match_info?.llm_score === undefined" class="text-gray-400 italic">
                         <el-icon class="is-loading"><Loading /></el-icon> 分析中...
+                    </div>
+                    <div v-else>
+                        -
                     </div>
                 </template>
             </el-table-column>
